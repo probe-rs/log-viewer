@@ -3,8 +3,12 @@
 use std::{fmt::Display, path::PathBuf};
 
 use eframe::{
-    egui::{self, RichText, Ui},
-    epaint::Color32,
+    egui::{
+        self,
+        collapsing_header::{paint_default_icon, CollapsingState},
+        Context, RichText, Ui,
+    },
+    epaint::{self, Color32, Rounding},
 };
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +19,7 @@ fn main() {
     let log_path = std::env::args().nth(1).unwrap().into();
 
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(320.0, 240.0)),
+        initial_window_size: None,
         maximized: true,
         ..Default::default()
     };
@@ -30,6 +34,7 @@ struct MyApp {
     log_path: PathBuf,
     events: Vec<Event>,
     nodes: Vec<Node>,
+    search: String,
 }
 
 impl MyApp {
@@ -90,6 +95,7 @@ impl MyApp {
             log_path,
             events,
             nodes: nodes_storage,
+            search: String::new(),
         }
     }
 }
@@ -109,70 +115,85 @@ enum EventType {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading(format!("Viewing <{}>", &self.log_path.to_string_lossy()));
-            egui::ScrollArea::vertical().show(ui, |ui| self.draw_node(ui, 0));
+            let body = ui
+                .style_mut()
+                .text_styles
+                .get_mut(&egui::TextStyle::Body)
+                .unwrap();
+            body.size = 16.0;
+            let monospace = ui
+                .style_mut()
+                .text_styles
+                .get_mut(&egui::TextStyle::Monospace)
+                .unwrap();
+            monospace.size = 16.0;
 
-            // ui.horizontal(|ui| {
-            //     let name_label = ui.label("Your name: ");
-            //     ui.text_edit_singleline(&mut self.name)
-            //         .labelled_by(name_label.id);
-            // });
-            // ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-            // if ui.button("Click each year").clicked() {
-            //     self.age += 1;
-            // }
-            // ui.label(format!("Hello '{}', age {}", self.name, self.age));
+            ui.heading(format!("Viewing <{}>", &self.log_path.to_string_lossy()));
+            ui.horizontal(|ui| {
+                let name_label = ui.label("Search: ");
+                ui.text_edit_singleline(&mut self.search)
+                    .labelled_by(name_label.id);
+            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .show(ui, |ui| self.draw_node(ctx, ui, 0));
         });
     }
 }
 
 impl MyApp {
-    fn draw_node(&self, ui: &mut Ui, node_index: usize) {
+    fn draw_node(&self, ctx: &Context, ui: &mut Ui, node_index: usize) {
         let node = &self.nodes[node_index];
         let event = node.index.map(|i| &self.events[i]);
 
-        let span_title = event
-            .map(|e| e.span.as_ref().unwrap().name.clone())
-            .unwrap_or_else(|| "Root".into());
-        let level = event.map(|e| e.level);
-        let level_color = match level {
-            Some(level) => match level {
-                LogLevel::Trace => Color32::WHITE,
-                LogLevel::Debug => Color32::LIGHT_BLUE,
-                LogLevel::Info => Color32::GREEN,
-                LogLevel::Warn => Color32::YELLOW,
-                LogLevel::Error => Color32::RED,
-            },
-            None => Color32::GRAY,
-        };
-        let span_title = RichText::new(span_title).color(level_color);
-
-        egui::CollapsingHeader::new(span_title)
-            .id_source(node_index)
-            .default_open(node.expanded)
-            .show(ui, |ui| {
-                for child in &node.children {
-                    match child {
-                        EventType::Message(message) => {
-                            let event = &self.events[*message];
-                            ui.horizontal(|ui| {
-                                ui.colored_label(
-                                    match event.level {
-                                        LogLevel::Trace => Color32::WHITE,
-                                        LogLevel::Debug => Color32::LIGHT_BLUE,
-                                        LogLevel::Info => Color32::GREEN,
-                                        LogLevel::Warn => Color32::YELLOW,
-                                        LogLevel::Error => Color32::RED,
-                                    },
-                                    event.level.to_string(),
-                                );
-                                ui.label(&event.fields.message);
-                            });
-                        }
-                        EventType::Node(node) => self.draw_node(ui, *node),
+        let body = |ui: &mut Ui| {
+            for child in &node.children {
+                match child {
+                    EventType::Message(message) => {
+                        let event = &self.events[*message];
+                        ui.horizontal(|ui| {
+                            let level = event.level;
+                            level.draw(ui);
+                            ui.label(&event.fields.message);
+                        });
                     }
+                    EventType::Node(node) => self.draw_node(ctx, ui, *node),
                 }
+            }
+        };
+
+        if let Some(event) = event {
+            let span_title = event.span.as_ref().unwrap().name.clone();
+            let level = event.level;
+
+            let id = egui::Id::new(node_index);
+            let mut state = CollapsingState::load_with_default_open(ctx, id, node.expanded);
+            let header_response = ui.horizontal(|ui| {
+                ui.style_mut().visuals.extreme_bg_color = Color32::from_rgb(48, 49, 52);
+                // ui.style_mut().visuals.widgets. = Color32::from_rgb(48, 49, 52);
+                let visuals = &ui.style().visuals;
+
+                let mut rect = ui.max_rect();
+                rect.set_height(18.0);
+                ui.painter().add(epaint::RectShape {
+                    rect,
+                    rounding: Rounding::none(),
+                    fill: visuals.extreme_bg_color,
+                    stroke: Default::default(),
+                });
+
+                state.show_toggle_button(ui, paint_default_icon);
+
+                level.draw(ui);
+
+                ui.label(span_title);
             });
+            state.show_body_indented(&header_response.response, ui, |ui| {
+                body(ui);
+            });
+        } else {
+            body(ui);
+        }
     }
 }
 
@@ -207,6 +228,30 @@ enum LogLevel {
 
 impl Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let text = format!("{:?}", self).to_ascii_uppercase();
+        write!(f, "{}", text)
+    }
+}
+
+impl LogLevel {
+    fn draw(&self, ui: &mut Ui) {
+        let string = format!("[{self}]");
+        let pad = 7 - string.len();
+        ui.colored_label(
+            match self {
+                LogLevel::Trace => Color32::WHITE,
+                LogLevel::Debug => Color32::LIGHT_BLUE,
+                LogLevel::Info => Color32::GREEN,
+                LogLevel::Warn => Color32::YELLOW,
+                LogLevel::Error => Color32::RED,
+            },
+            RichText::from(format!(
+                "{string}{}",
+                std::iter::repeat(" ")
+                    .take(pad)
+                    .fold(String::new(), |a, b| a + b)
+            ))
+            .monospace(),
+        );
     }
 }
