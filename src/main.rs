@@ -37,6 +37,9 @@ struct MyApp {
     search: String,
     search_results: Vec<SearchResult>,
     level_filter: HashSet<LogLevel>,
+    selected_occurrence: usize,
+    total_occurrences: usize,
+    changed_occurrence: bool,
 }
 
 impl MyApp {
@@ -115,23 +118,31 @@ impl MyApp {
             ]
             .into_iter()
             .collect(),
+            selected_occurrence: 0,
+            total_occurrences: 0,
+            changed_occurrence: false,
         }
     }
 
     fn search(&mut self) {
+        let mut total_occurrences = 0;
         for (index, event) in self.events.iter().enumerate() {
             if !self.search.is_empty() {
-                let occurrences = event
+                let occurrences: Vec<Range<usize>> = event
                     .fields
                     .message
                     .match_indices(&self.search)
                     .map(|(i, s)| i..i + s.len())
                     .collect();
+                total_occurrences += occurrences.len();
                 self.search_results[index].occurrences = occurrences;
             } else {
                 self.search_results[index].occurrences = vec![];
             }
         }
+        self.total_occurrences = total_occurrences;
+        self.selected_occurrence = 0;
+        self.changed_occurrence = true;
     }
 }
 
@@ -180,6 +191,18 @@ impl eframe::App for MyApp {
                 }
 
                 ui.horizontal(|ui| {
+                    if ui.button("<").clicked() {
+                        self.selected_occurrence -= 1
+                    }
+                    if ui.button(">").clicked() {
+                        self.selected_occurrence += 1
+                    }
+                    self.selected_occurrence =
+                        self.selected_occurrence.min(self.total_occurrences).max(0);
+                    self.changed_occurrence = true;
+                });
+
+                ui.horizontal(|ui| {
                     for level in [
                         LogLevel::Error,
                         LogLevel::Warn,
@@ -202,17 +225,29 @@ impl eframe::App for MyApp {
             });
             egui::ScrollArea::vertical()
                 .auto_shrink([false, true])
-                .show(ui, |ui| self.draw_node(ctx, ui, 0));
+                .show(ui, |ui| {
+                    let (_, changed_occurrence) = self.draw_node(ctx, ui, 0, 0);
+                    if changed_occurrence {
+                        self.changed_occurrence = false;
+                    }
+                });
         });
     }
 }
 
 impl MyApp {
-    fn draw_node(&self, ctx: &Context, ui: &mut Ui, node_index: usize) {
+    fn draw_node(
+        &self,
+        ctx: &Context,
+        ui: &mut Ui,
+        node_index: usize,
+        mut occurrences_offset: usize,
+    ) -> (usize, bool) {
         let node = &self.nodes[node_index];
         let event = node.index.map(|i| &self.events[i]);
 
-        let body = |ui: &mut Ui| {
+        let body = |ui: &mut Ui, mut occurrences_offset: usize, changed_occurrence: bool| {
+            let mut changed_occurrence_here = false;
             for child in &node.children {
                 match child {
                     EventType::Message(message) => {
@@ -224,7 +259,6 @@ impl MyApp {
                             ui.horizontal(|ui| {
                                 let level = event.level;
                                 level.draw(ui);
-
                                 if result.occurrences.is_empty() {
                                     ui.label(message);
                                 } else {
@@ -232,24 +266,42 @@ impl MyApp {
                                     for occurrence in &result.occurrences {
                                         ui.style_mut().spacing.item_spacing.x = 0.0;
                                         ui.label(&message[previous..occurrence.start]);
-                                        ui.label(
+                                        let response = ui.label(
                                             RichText::new(
                                                 &message[occurrence.start..occurrence.end],
                                             )
-                                            .background_color(Color32::LIGHT_BLUE),
+                                            .background_color(
+                                                if occurrences_offset == self.selected_occurrence {
+                                                    Color32::LIGHT_RED
+                                                } else {
+                                                    Color32::LIGHT_BLUE
+                                                },
+                                            ),
                                         );
+                                        if occurrences_offset == self.selected_occurrence
+                                            && changed_occurrence
+                                        {
+                                            response.scroll_to_me(None);
+                                            changed_occurrence_here = false;
+                                        }
                                         previous = occurrence.end;
+                                        occurrences_offset += 1;
                                     }
                                     ui.label(&message[previous..message.len()]);
                                 }
                             });
                         }
                     }
-                    EventType::Node(node) => self.draw_node(ctx, ui, *node),
+                    EventType::Node(node) => {
+                        (occurrences_offset, changed_occurrence_here) =
+                            self.draw_node(ctx, ui, *node, occurrences_offset)
+                    }
                 }
             }
+            (occurrences_offset, changed_occurrence_here)
         };
 
+        let mut changed_occurrence = false;
         if let Some(event) = event {
             let span_title = event.span.as_ref().unwrap().name.clone();
             let level = event.level;
@@ -277,11 +329,15 @@ impl MyApp {
                 ui.label(span_title);
             });
             state.show_body_indented(&header_response.response, ui, |ui| {
-                body(ui);
+                (occurrences_offset, changed_occurrence) =
+                    body(ui, occurrences_offset, self.changed_occurrence);
             });
         } else {
-            body(ui);
+            (occurrences_offset, changed_occurrence) =
+                body(ui, occurrences_offset, self.changed_occurrence);
         }
+
+        (occurrences_offset, changed_occurrence)
     }
 }
 
