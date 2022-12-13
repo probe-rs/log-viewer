@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{fmt::Display, path::PathBuf};
+use std::{fmt::Display, ops::Range, path::PathBuf};
 
 use eframe::{
     egui::{
@@ -8,7 +8,7 @@ use eframe::{
         collapsing_header::{paint_default_icon, CollapsingState},
         Context, RichText, Ui,
     },
-    epaint::{self, Color32, Rounding},
+    epaint::{self, ahash::HashSet, Color32, Rounding},
 };
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,8 @@ struct MyApp {
     events: Vec<Event>,
     nodes: Vec<Node>,
     search: String,
+    search_results: Vec<SearchResult>,
+    level_filter: HashSet<LogLevel>,
 }
 
 impl MyApp {
@@ -91,11 +93,44 @@ impl MyApp {
             }
         }
 
+        let search_results = vec![
+            SearchResult {
+                occurrences: vec![]
+            };
+            events.len()
+        ];
+
         Self {
             log_path,
             events,
             nodes: nodes_storage,
             search: String::new(),
+            search_results,
+            level_filter: [
+                LogLevel::Error,
+                LogLevel::Warn,
+                LogLevel::Info,
+                LogLevel::Debug,
+                LogLevel::Trace,
+            ]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    fn search(&mut self) {
+        for (index, event) in self.events.iter().enumerate() {
+            if !self.search.is_empty() {
+                let occurrences = event
+                    .fields
+                    .message
+                    .match_indices(&self.search)
+                    .map(|(i, s)| i..i + s.len())
+                    .collect();
+                self.search_results[index].occurrences = occurrences;
+            } else {
+                self.search_results[index].occurrences = vec![];
+            }
         }
     }
 }
@@ -110,6 +145,11 @@ struct Node {
 enum EventType {
     Message(usize),
     Node(usize),
+}
+
+#[derive(Clone, Debug)]
+struct SearchResult {
+    occurrences: Vec<Range<usize>>,
 }
 
 impl eframe::App for MyApp {
@@ -131,8 +171,34 @@ impl eframe::App for MyApp {
             ui.heading(format!("Viewing <{}>", &self.log_path.to_string_lossy()));
             ui.horizontal(|ui| {
                 let name_label = ui.label("Search: ");
-                ui.text_edit_singleline(&mut self.search)
-                    .labelled_by(name_label.id);
+                let changed = ui
+                    .text_edit_singleline(&mut self.search)
+                    .labelled_by(name_label.id)
+                    .changed();
+                if changed {
+                    self.search();
+                }
+
+                ui.horizontal(|ui| {
+                    for level in [
+                        LogLevel::Error,
+                        LogLevel::Warn,
+                        LogLevel::Info,
+                        LogLevel::Debug,
+                        LogLevel::Trace,
+                    ] {
+                        if ui
+                            .selectable_label(self.level_filter.contains(&level), level.to_string())
+                            .clicked()
+                        {
+                            if self.level_filter.contains(&level) {
+                                self.level_filter.remove(&level);
+                            } else {
+                                self.level_filter.insert(level);
+                            }
+                        }
+                    }
+                });
             });
             egui::ScrollArea::vertical()
                 .auto_shrink([false, true])
@@ -151,11 +217,33 @@ impl MyApp {
                 match child {
                     EventType::Message(message) => {
                         let event = &self.events[*message];
-                        ui.horizontal(|ui| {
-                            let level = event.level;
-                            level.draw(ui);
-                            ui.label(&event.fields.message);
-                        });
+                        let result = &self.search_results[*message];
+                        let message = &event.fields.message;
+
+                        if self.level_filter.contains(&event.level) {
+                            ui.horizontal(|ui| {
+                                let level = event.level;
+                                level.draw(ui);
+
+                                if result.occurrences.is_empty() {
+                                    ui.label(message);
+                                } else {
+                                    let mut previous = 0;
+                                    for occurrence in &result.occurrences {
+                                        ui.style_mut().spacing.item_spacing.x = 0.0;
+                                        ui.label(&message[previous..occurrence.start]);
+                                        ui.label(
+                                            RichText::new(
+                                                &message[occurrence.start..occurrence.end],
+                                            )
+                                            .background_color(Color32::LIGHT_BLUE),
+                                        );
+                                        previous = occurrence.end;
+                                    }
+                                    ui.label(&message[previous..message.len()]);
+                                }
+                            });
+                        }
                     }
                     EventType::Node(node) => self.draw_node(ctx, ui, *node),
                 }
@@ -216,7 +304,7 @@ struct Event {
     target: String,
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "UPPERCASE")]
 enum LogLevel {
     Trace,
