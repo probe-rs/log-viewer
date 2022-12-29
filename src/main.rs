@@ -127,7 +127,7 @@ fn App() -> Html {
         let total_occurrences = total_occurrences.clone();
         move |_| {
             let value = *selected_occurrence - 1;
-            let value = value.min(*total_occurrences).max(0);
+            let value = value.clamp(0, *total_occurrences);
             changed_occurrence.set(true);
             selected_occurrence.set(value);
         }
@@ -135,7 +135,7 @@ fn App() -> Html {
     let onclick_next = {
         move |_| {
             let value = *selected_occurrence + 1;
-            let value = value.min(*total_occurrences).max(0);
+            let value = value.clamp(0, *total_occurrences);
             changed_occurrence.set(true);
             selected_occurrence.set(value);
         }
