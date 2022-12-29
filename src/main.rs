@@ -1,7 +1,7 @@
 mod gist;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
 };
 
@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 // use wasm_bindgen::JsCast;
 // use web_sys::HtmlInputElement;
 
+use wasm_bindgen::JsCast;
+use web_sys::HtmlTextAreaElement;
 use yew::prelude::*;
 
-use crate::gist::Gist;
+use crate::gist::{Gist, GistFile};
 
 fn main() {
     yew::Renderer::<App>::new().render();
@@ -117,6 +119,8 @@ fn App() -> Html {
     });
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
+    let show_upload = use_state(|| false);
+    let upload_value = use_state(String::new);
     // let selected_occurrence = use_state(|| 0);
     // let total_occurrences = use_state(|| 0);
     // let changed_occurrence = use_state(|| false);
@@ -156,9 +160,94 @@ fn App() -> Html {
     //     }
     // };
 
+    let upload_oninput = {
+        let upload_value = upload_value.clone();
+        move |event: InputEvent| {
+            // When events are created the target is undefined, it's only
+            // when dispatched does the target get added.
+            let target = event.target();
+            // Events can bubble so this listener might catch events from child
+            // elements which are not of type HtmlInputElement
+            let input = target
+                .and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok())
+                .unwrap();
+            upload_value.set(input.value());
+        }
+    };
+
     let on_select = {
         let level_filter = level_filter.clone();
         move |new_value| level_filter.set(new_value)
+    };
+
+    let oncreate = {
+        let show_upload = show_upload.clone();
+        move |_| show_upload.set(true)
+    };
+
+    let onupload = {
+        let gist_clone = gist.clone();
+        let state_clone = state.clone();
+        let show_upload = show_upload.clone();
+        move |_| {
+            let gist_clone = gist_clone.clone();
+            let state_clone = state_clone.clone();
+            let show_upload = show_upload.clone();
+            let upload_value = upload_value.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let upload_value = upload_value.clone();
+                let local = || async move {
+                    let token = std::env!("GH_TOKEN");
+                    let gist = Gist {
+                        id: None,
+                        public: true,
+                        files: {
+                            let mut map = BTreeMap::new();
+                            map.insert(
+                                "trace.json".into(),
+                                GistFile {
+                                    name: "trace.json".into(),
+                                    content: (*upload_value).clone(),
+                                },
+                            );
+                            map
+                        },
+                        description: Some("probe-rs debug trace".into()),
+                    };
+                    let response = Request::post("https://api.github.com/gists")
+                        .header("Authorization", &format!("Bearer {token}"))
+                        .json(&gist)?
+                        .send()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+                    if response.status() == 201 {
+                        let response: Gist = response
+                            .json()
+                            .await
+                            .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+                        Ok(response)
+                    } else {
+                        anyhow::bail!("Failed to load file with: {}", response.status());
+                    }
+                };
+                let result = local().await;
+                if let Ok(gist) = &result {
+                    let state = gist.current_file().map(|s| State::new(&s));
+                    state_clone.set(state);
+                    let history = BrowserHistory::new();
+
+                    history
+                        .push_with_query(history.location().path(), {
+                            let mut map = HashMap::new();
+                            map.insert("gist", gist.id.clone());
+                            map
+                        })
+                        .unwrap();
+                }
+                gist_clone.set(result);
+                show_upload.set(false);
+            });
+        }
     };
 
     // https://api.github.com/gists/14a826cbe3a884fc3207cde3dfd38817
@@ -172,7 +261,6 @@ fn App() -> Html {
                     let location: HashMap<String, String> =
                         BrowserHistory::new().location().query()?;
 
-                    log::info!("{:?}", location);
                     let hash = location
                         .get("gist")
                         .ok_or_else(|| anyhow::anyhow!("A gist hash must be provided"))?;
@@ -204,13 +292,20 @@ fn App() -> Html {
         (),
     );
 
-    html! {
+    html! {<>
+        <div class={classes!["w-full", "h-full", "bg-white", if *show_upload { "fixed" } else { "hidden" }]}>
+            <button onclick={onupload} class="border border-black px-2 py-1 m-3">{"Upload"}</button>
+            <div class="w-full h-full p-3">
+                <textarea class="border border-black w-full h-5/6 p-3" oninput={upload_oninput}></textarea>
+            </div>
+        </div>
         <div>
             // <label>{"Search:"}</label>
             // <input {oninput} value={search_value.to_string()} />
             // <button onclick={onclick_previous}>{ "<" }</button>
             // <button onclick={onclick_next}>{ ">" }</button>
             <LevelPicker level_filter={(*level_filter).clone()} {on_select} />
+            <button onclick={oncreate} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]}>{"Create"}</button>
             <div class="m-3">
                 {match (&*gist, &*state) {
                     (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={(*level_filter).clone()} />},
@@ -219,7 +314,7 @@ fn App() -> Html {
                 }}
             </div>
         </div>
-    }
+    </>}
 }
 
 #[derive(Clone, PartialEq, Properties)]
@@ -311,7 +406,7 @@ fn draw_node(props: &DrawNodeProps) -> Html {
         let level = event.level;
 
         html! {
-            <div class="flex w-full">
+            <div class="flex w-full py-1">
                 <div class="flex">
                     <svg xmlns="http://www.w3.org/2000/svg" onclick={onclick.clone()} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if !*collapsed { "block" } else { "hidden" } )}>
                         <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
@@ -324,7 +419,7 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                 <div>
                     {level.draw()}
                     {span_title}
-                    <span class={classes!(if *collapsed { "block" } else { "hidden" } )}>{body()}</span>
+                    <span class={classes!["py-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
                 </div>
             </div>
         }
