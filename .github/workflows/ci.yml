@@ -11,19 +11,27 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v3
+    - name: Install stable toolchain
+      uses: actions-rs/toolchain@v1.0.7
+      with:
+        toolchain: stable
+        target: wasm32-unknown-unknown
+        override: true
     - uses: jetli/trunk-action@v0.2.0
       with:
         # Optional version of trunk to install(eg. 'v0.8.1', 'latest')
         version: 'latest'
     - name: Build
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         trunk build
     - name: cargo fmt & clippy
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
         cargo fmt --all -- --check
         cargo clippy -- --deny=warnings
