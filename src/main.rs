@@ -407,7 +407,7 @@ fn draw_node(props: &DrawNodeProps) -> Html {
 
         html! {
             <div class="flex w-full py-1">
-                <div class="flex">
+                <div class="flex flex-col">
                     <svg xmlns="http://www.w3.org/2000/svg" onclick={onclick.clone()} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if !*collapsed { "block" } else { "hidden" } )}>
                         <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                     </svg>
@@ -415,11 +415,12 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                     <svg xmlns="http://www.w3.org/2000/svg" {onclick} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if *collapsed { "block" } else { "hidden" } )}>
                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                     </svg>
+                    <div class={classes!("grow", "w-3", "border-r", "border-black", if *collapsed { "block" } else { "hidden" } )}></div>
                 </div>
                 <div>
                     {level.draw()}
                     {span_title}
-                    <span class={classes!["py-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
+                    <span class={classes!["pl-3","pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
                 </div>
             </div>
         }
