@@ -369,9 +369,8 @@ impl LogLevel {
             LogLevel::Debug => "blue",
             LogLevel::Info => "green",
             LogLevel::Warn => "yellow",
-            LogLevel::Error => "red",
+            LogLevel::Error => "text-red-500",
         };
-        let color = format!("color: {color}");
 
         let label = format!(
             "{label}{}",
@@ -379,6 +378,6 @@ impl LogLevel {
                 .take(pad)
                 .fold(String::new(), |a, b| a + b)
         );
-        html! {<span style={color}>{label}</span>}
+        html! {<span class={color}>{label}</span>}
     }
 }
