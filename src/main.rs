@@ -10,8 +10,8 @@ use gloo::{
     net::http::Request,
 };
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
-use web_sys::HtmlInputElement;
+// use wasm_bindgen::JsCast;
+// use web_sys::HtmlInputElement;
 
 use yew::prelude::*;
 
@@ -104,9 +104,6 @@ enum EventType {
 fn App() -> Html {
     wasm_logger::init(wasm_logger::Config::default());
 
-    let selected_occurrence = use_state(|| 0);
-    let total_occurrences = use_state(|| 0);
-    let changed_occurrence = use_state(|| false);
     let level_filter = use_state(|| {
         let mut set = HashSet::new();
         set.extend([
@@ -120,40 +117,48 @@ fn App() -> Html {
     });
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
-    let search_value = use_state(String::new);
-    let onclick_previous = {
-        let selected_occurrence = selected_occurrence.clone();
-        let changed_occurrence = changed_occurrence.clone();
-        let total_occurrences = total_occurrences.clone();
-        move |_| {
-            let value = *selected_occurrence - 1;
-            let value = value.clamp(0, *total_occurrences);
-            changed_occurrence.set(true);
-            selected_occurrence.set(value);
-        }
-    };
-    let onclick_next = {
-        move |_| {
-            let value = *selected_occurrence + 1;
-            let value = value.clamp(0, *total_occurrences);
-            changed_occurrence.set(true);
-            selected_occurrence.set(value);
-        }
-    };
-    let oninput = {
-        let search_value = search_value.clone();
-        move |event: InputEvent| {
-            // When events are created the target is undefined, it's only
-            // when dispatched does the target get added.
-            let target = event.target();
-            // Events can bubble so this listener might catch events from child
-            // elements which are not of type HtmlInputElement
-            let input = target
-                .and_then(|t| t.dyn_into::<HtmlInputElement>().ok())
-                .unwrap();
-            search_value.set(input.value());
-            // TODO: search()
-        }
+    // let selected_occurrence = use_state(|| 0);
+    // let total_occurrences = use_state(|| 0);
+    // let changed_occurrence = use_state(|| false);
+    // let search_value = use_state(String::new);
+    // let onclick_previous = {
+    //     let selected_occurrence = selected_occurrence.clone();
+    //     let changed_occurrence = changed_occurrence.clone();
+    //     let total_occurrences = total_occurrences.clone();
+    //     move |_| {
+    //         let value = *selected_occurrence - 1;
+    //         let value = value.clamp(0, *total_occurrences);
+    //         changed_occurrence.set(true);
+    //         selected_occurrence.set(value);
+    //     }
+    // };
+    // let onclick_next = {
+    //     move |_| {
+    //         let value = *selected_occurrence + 1;
+    //         let value = value.clamp(0, *total_occurrences);
+    //         changed_occurrence.set(true);
+    //         selected_occurrence.set(value);
+    //     }
+    // };
+    // let oninput = {
+    //     let search_value = search_value.clone();
+    //     move |event: InputEvent| {
+    //         // When events are created the target is undefined, it's only
+    //         // when dispatched does the target get added.
+    //         let target = event.target();
+    //         // Events can bubble so this listener might catch events from child
+    //         // elements which are not of type HtmlInputElement
+    //         let input = target
+    //             .and_then(|t| t.dyn_into::<HtmlInputElement>().ok())
+    //             .unwrap();
+    //         search_value.set(input.value());
+    //         // TODO: search()
+    //     }
+    // };
+
+    let on_select = {
+        let level_filter = level_filter.clone();
+        move |new_value| level_filter.set(new_value)
     };
 
     // https://api.github.com/gists/14a826cbe3a884fc3207cde3dfd38817
@@ -201,56 +206,61 @@ fn App() -> Html {
 
     html! {
         <div>
-            <label>{"Search:"}</label>
-            <input {oninput} value={search_value.to_string()} />
-            <button onclick={onclick_previous}>{ "<" }</button>
-            <button onclick={onclick_next}>{ ">" }</button>
-            <div>{match (&*gist, &*state) {
-                (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={(*level_filter).clone()} />},
-                (Err(error), _) => error.to_string().into(),
-                _ => unreachable!()
-            }}</div>
+            // <label>{"Search:"}</label>
+            // <input {oninput} value={search_value.to_string()} />
+            // <button onclick={onclick_previous}>{ "<" }</button>
+            // <button onclick={onclick_next}>{ ">" }</button>
+            <LevelPicker level_filter={(*level_filter).clone()} {on_select} />
+            <div class="m-3">
+                {match (&*gist, &*state) {
+                    (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={(*level_filter).clone()} />},
+                    (Err(error), _) => error.to_string().into(),
+                    _ => unreachable!()
+                }}
+            </div>
         </div>
     }
 }
 
-// impl eframe::App for MyApp {
-//     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-//         egui::CentralPanel::default().show(ctx, |ui| {
-//             ui.horizontal(|ui| {
+#[derive(Clone, PartialEq, Properties)]
+struct LevelPickerProps {
+    level_filter: HashSet<LogLevel>,
+    on_select: Callback<HashSet<LogLevel>>,
+}
 
-//                 ui.horizontal(|ui| {
-//                     for level in [
-//                         LogLevel::Error,
-//                         LogLevel::Warn,
-//                         LogLevel::Info,
-//                         LogLevel::Debug,
-//                         LogLevel::Trace,
-//                     ] {
-//                         if ui
-//                             .selectable_label(self.level_filter.contains(&level), level.to_string())
-//                             .clicked()
-//                         {
-//                             if self.level_filter.contains(&level) {
-//                                 self.level_filter.remove(&level);
-//                             } else {
-//                                 self.level_filter.insert(level);
-//                             }
-//                         }
-//                     }
-//                 });
-//             });
-//             egui::ScrollArea::vertical()
-//                 .auto_shrink([false, true])
-//                 .show(ui, |ui| {
-//                     let (_, changed_occurrence) = self.draw_node(ctx, ui, 0, 0);
-//                     if changed_occurrence {
-//                         self.changed_occurrence = false;
-//                     }
-//                 });
-//         });
-//     }
-// }
+#[function_component(LevelPicker)]
+fn level_picker(props: &LevelPickerProps) -> Html {
+    let onselect = |level| {
+        let level_filter = props.level_filter.clone();
+        let on_select = props.on_select.clone();
+        move |_| {
+            let mut level_filter = level_filter.clone();
+            if level_filter.contains(&level) {
+                level_filter.remove(&level);
+            } else {
+                level_filter.insert(level);
+            }
+            on_select.emit(level_filter.clone())
+        }
+    };
+
+    html! {
+        [
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+            LogLevel::Trace,
+        ].into_iter().map(|level| {
+            let checked = props.level_filter.contains(&level);
+            let color = level.color();
+            html!{<button onclick={onselect(level)} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black",format!("bg-{color}")]}>
+                <label class="pr-2">{format!("{level}")}</label>
+                <input type="checkbox" {checked} />
+            </button>}
+        }).collect::<Html>()
+    }
+}
 
 #[derive(Clone, PartialEq, Properties)]
 struct DrawNodeProps {
@@ -279,11 +289,10 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                     EventType::Message(message) => {
                         let event = &props.state.events[*message];
                         let message = &event.fields.message;
-                        if props.level_filter.contains(&event.level) {
-                            html! {<div>{message}</div>}
-                        } else {
-                            html! {<span></span>}
-                        }
+                        let level = &event.level;
+                        let hidden = !props.level_filter.contains(&event.level);
+                        html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>{level.draw()}{message}</pre>}
+
                     }
                     EventType::Node(node_index) => html! {
                         <DrawNode
@@ -364,13 +373,7 @@ impl LogLevel {
     fn draw(&self) -> Html {
         let label = format!("[{self}]");
         let pad = 7 - label.len();
-        let color = match self {
-            LogLevel::Trace => "white",
-            LogLevel::Debug => "blue",
-            LogLevel::Info => "green",
-            LogLevel::Warn => "text-orange-500",
-            LogLevel::Error => "text-red-500",
-        };
+        let color = self.color();
 
         let label = format!(
             "{label}{}",
@@ -378,6 +381,16 @@ impl LogLevel {
                 .take(pad)
                 .fold(String::new(), |a, b| a + b)
         );
-        html! {<span class={color}>{label}</span>}
+        html! {<span class={classes!["m-1","p-1", "rounded-md", format!("bg-{color}")]}>{label}</span>}
+    }
+
+    fn color(&self) -> &str {
+        match self {
+            LogLevel::Trace => "gray-500",
+            LogLevel::Debug => "blue-500",
+            LogLevel::Info => "green-500",
+            LogLevel::Warn => "orange-500",
+            LogLevel::Error => "red-500",
+        }
     }
 }
