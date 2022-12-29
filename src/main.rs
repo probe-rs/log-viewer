@@ -1,51 +1,34 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+mod gist;
 
-use std::{fmt::Display, ops::Range, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
-use eframe::{
-    egui::{
-        self,
-        collapsing_header::{paint_default_icon, CollapsingState},
-        Context, RichText, Ui,
-    },
-    epaint::{self, ahash::HashSet, Color32, Rounding},
+use gloo::{
+    history::{BrowserHistory, History},
+    net::http::Request,
 };
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::JsCast;
+use web_sys::HtmlInputElement;
+
+use yew::prelude::*;
+
+use crate::gist::Gist;
 
 fn main() {
-    // Log to stdout (if you run with `RUST_LOG=debug`).
-    tracing_subscriber::fmt::init();
-
-    let log_path = std::env::args().nth(1).unwrap().into();
-
-    let options = eframe::NativeOptions {
-        initial_window_size: None,
-        maximized: true,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Log Viewer",
-        options,
-        Box::new(|_cc| Box::new(MyApp::new(log_path))),
-    )
+    yew::Renderer::<App>::new().render();
 }
 
-struct MyApp {
-    log_path: PathBuf,
+#[derive(Debug, Clone, PartialEq, Properties)]
+struct State {
     events: Vec<Event>,
     nodes: Vec<Node>,
-    search: String,
-    search_results: Vec<SearchResult>,
-    level_filter: HashSet<LogLevel>,
-    selected_occurrence: usize,
-    total_occurrences: usize,
-    changed_occurrence: bool,
 }
 
-impl MyApp {
-    fn new(log_path: PathBuf) -> Self {
-        let data = std::fs::read_to_string(&log_path).unwrap();
-
+impl State {
+    fn new(data: &str) -> Self {
         let events: Result<Vec<Event>, _> = data
             .lines()
             .filter(|l| l.starts_with('{'))
@@ -96,56 +79,14 @@ impl MyApp {
             }
         }
 
-        let search_results = vec![
-            SearchResult {
-                occurrences: vec![]
-            };
-            events.len()
-        ];
-
         Self {
-            log_path,
             events,
             nodes: nodes_storage,
-            search: String::new(),
-            search_results,
-            level_filter: [
-                LogLevel::Error,
-                LogLevel::Warn,
-                LogLevel::Info,
-                LogLevel::Debug,
-                LogLevel::Trace,
-            ]
-            .into_iter()
-            .collect(),
-            selected_occurrence: 0,
-            total_occurrences: 0,
-            changed_occurrence: false,
         }
-    }
-
-    fn search(&mut self) {
-        let mut total_occurrences = 0;
-        for (index, event) in self.events.iter().enumerate() {
-            if !self.search.is_empty() {
-                let occurrences: Vec<Range<usize>> = event
-                    .fields
-                    .message
-                    .match_indices(&self.search)
-                    .map(|(i, s)| i..i + s.len())
-                    .collect();
-                total_occurrences += occurrences.len();
-                self.search_results[index].occurrences = occurrences;
-            } else {
-                self.search_results[index].occurrences = vec![];
-            }
-        }
-        self.total_occurrences = total_occurrences;
-        self.selected_occurrence = 0;
-        self.changed_occurrence = true;
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 struct Node {
     index: Option<usize>,
     /// Indices of all child nodes
@@ -153,205 +94,247 @@ struct Node {
     expanded: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 enum EventType {
     Message(usize),
     Node(usize),
 }
 
-#[derive(Clone, Debug)]
-struct SearchResult {
-    occurrences: Vec<Range<usize>>,
-}
+#[function_component]
+fn App() -> Html {
+    wasm_logger::init(wasm_logger::Config::default());
 
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let body = ui
-                .style_mut()
-                .text_styles
-                .get_mut(&egui::TextStyle::Body)
+    let selected_occurrence = use_state(|| 0);
+    let total_occurrences = use_state(|| 0);
+    let changed_occurrence = use_state(|| false);
+    let level_filter = use_state(|| {
+        let mut set = HashSet::new();
+        set.extend([
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+            LogLevel::Trace,
+        ]);
+        set
+    });
+    let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
+    let state = use_state(|| None);
+    let search_value = use_state(String::new);
+    let onclick_previous = {
+        let selected_occurrence = selected_occurrence.clone();
+        let changed_occurrence = changed_occurrence.clone();
+        let total_occurrences = total_occurrences.clone();
+        move |_| {
+            let value = *selected_occurrence - 1;
+            let value = value.min(*total_occurrences).max(0);
+            changed_occurrence.set(true);
+            selected_occurrence.set(value);
+        }
+    };
+    let onclick_next = {
+        move |_| {
+            let value = *selected_occurrence + 1;
+            let value = value.min(*total_occurrences).max(0);
+            changed_occurrence.set(true);
+            selected_occurrence.set(value);
+        }
+    };
+    let oninput = {
+        let search_value = search_value.clone();
+        move |event: InputEvent| {
+            // When events are created the target is undefined, it's only
+            // when dispatched does the target get added.
+            let target = event.target();
+            // Events can bubble so this listener might catch events from child
+            // elements which are not of type HtmlInputElement
+            let input = target
+                .and_then(|t| t.dyn_into::<HtmlInputElement>().ok())
                 .unwrap();
-            body.size = 16.0;
-            let monospace = ui
-                .style_mut()
-                .text_styles
-                .get_mut(&egui::TextStyle::Monospace)
-                .unwrap();
-            monospace.size = 16.0;
+            search_value.set(input.value());
+            // TODO: search()
+        }
+    };
 
-            ui.heading(format!("Viewing <{}>", &self.log_path.to_string_lossy()));
-            ui.horizontal(|ui| {
-                let name_label = ui.label("Search: ");
-                let changed = ui
-                    .text_edit_singleline(&mut self.search)
-                    .labelled_by(name_label.id)
-                    .changed();
-                if changed {
-                    self.search();
+    // https://api.github.com/gists/14a826cbe3a884fc3207cde3dfd38817
+    let gist_clone = gist.clone();
+    let state_clone = state.clone();
+    use_effect_with_deps(
+        move |_| {
+            let gist = gist_clone;
+            wasm_bindgen_futures::spawn_local(async move {
+                let local = move || async {
+                    let location: HashMap<String, String> =
+                        BrowserHistory::new().location().query()?;
+
+                    log::info!("{:?}", location);
+                    let hash = location
+                        .get("gist")
+                        .ok_or_else(|| anyhow::anyhow!("A gist hash must be provided"))?;
+                    let token = std::env!("GH_TOKEN");
+                    let response = Request::get(&format!("https://api.github.com/gists/{hash}"))
+                        .header("Authorization", &format!("Bearer {token}"))
+                        .send()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+                    if response.status() == 200 {
+                        let response: Gist = response
+                            .json()
+                            .await
+                            .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+                        Ok(response)
+                    } else {
+                        anyhow::bail!("Failed to load file with: {}", response.status());
+                    }
+                };
+
+                let result = local().await;
+                if let Ok(gist) = &result {
+                    let state = gist.current_file().map(|s| State::new(&s));
+                    state_clone.set(state);
                 }
-
-                ui.horizontal(|ui| {
-                    if ui.button("<").clicked() {
-                        self.selected_occurrence -= 1
-                    }
-                    if ui.button(">").clicked() {
-                        self.selected_occurrence += 1
-                    }
-                    self.selected_occurrence =
-                        self.selected_occurrence.min(self.total_occurrences).max(0);
-                    self.changed_occurrence = true;
-                });
-
-                ui.horizontal(|ui| {
-                    for level in [
-                        LogLevel::Error,
-                        LogLevel::Warn,
-                        LogLevel::Info,
-                        LogLevel::Debug,
-                        LogLevel::Trace,
-                    ] {
-                        if ui
-                            .selectable_label(self.level_filter.contains(&level), level.to_string())
-                            .clicked()
-                        {
-                            if self.level_filter.contains(&level) {
-                                self.level_filter.remove(&level);
-                            } else {
-                                self.level_filter.insert(level);
-                            }
-                        }
-                    }
-                });
+                gist.set(result);
             });
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let (_, changed_occurrence) = self.draw_node(ctx, ui, 0, 0);
-                    if changed_occurrence {
-                        self.changed_occurrence = false;
-                    }
-                });
-        });
+        },
+        (),
+    );
+
+    html! {
+        <div>
+            <label>{"Search:"}</label>
+            <input {oninput} value={search_value.to_string()} />
+            <button onclick={onclick_previous}>{ "<" }</button>
+            <button onclick={onclick_next}>{ ">" }</button>
+            <div>{match (&*gist, &*state) {
+                (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={(*level_filter).clone()} />},
+                (Err(error), _) => error.to_string().into(),
+                _ => unreachable!()
+            }}</div>
+        </div>
     }
 }
 
-impl MyApp {
-    fn draw_node(
-        &self,
-        ctx: &Context,
-        ui: &mut Ui,
-        node_index: usize,
-        mut occurrences_offset: usize,
-    ) -> (usize, bool) {
-        let node = &self.nodes[node_index];
-        let event = node.index.map(|i| &self.events[i]);
+// impl eframe::App for MyApp {
+//     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+//         egui::CentralPanel::default().show(ctx, |ui| {
+//             ui.horizontal(|ui| {
 
-        let body = |ui: &mut Ui, mut occurrences_offset: usize, changed_occurrence: bool| {
-            let mut changed_occurrence_here = false;
-            for child in &node.children {
+//                 ui.horizontal(|ui| {
+//                     for level in [
+//                         LogLevel::Error,
+//                         LogLevel::Warn,
+//                         LogLevel::Info,
+//                         LogLevel::Debug,
+//                         LogLevel::Trace,
+//                     ] {
+//                         if ui
+//                             .selectable_label(self.level_filter.contains(&level), level.to_string())
+//                             .clicked()
+//                         {
+//                             if self.level_filter.contains(&level) {
+//                                 self.level_filter.remove(&level);
+//                             } else {
+//                                 self.level_filter.insert(level);
+//                             }
+//                         }
+//                     }
+//                 });
+//             });
+//             egui::ScrollArea::vertical()
+//                 .auto_shrink([false, true])
+//                 .show(ui, |ui| {
+//                     let (_, changed_occurrence) = self.draw_node(ctx, ui, 0, 0);
+//                     if changed_occurrence {
+//                         self.changed_occurrence = false;
+//                     }
+//                 });
+//         });
+//     }
+// }
+
+#[derive(Clone, PartialEq, Properties)]
+struct DrawNodeProps {
+    state: State,
+    node_index: usize,
+    level_filter: HashSet<LogLevel>,
+}
+
+#[function_component(DrawNode)]
+fn draw_node(props: &DrawNodeProps) -> Html {
+    let node = &props.state.nodes[props.node_index];
+    let event = node.index.map(|i| &props.state.events[i]);
+    let collapsed = use_state(|| node.expanded);
+
+    let onclick = {
+        let collapsed = collapsed.clone();
+        move |_| {
+            collapsed.set(!*collapsed);
+        }
+    };
+
+    let body = || {
+        html! {{
+            node.children.iter().map(|child| {
                 match child {
                     EventType::Message(message) => {
-                        let event = &self.events[*message];
-                        let result = &self.search_results[*message];
+                        let event = &props.state.events[*message];
                         let message = &event.fields.message;
-
-                        if self.level_filter.contains(&event.level) {
-                            ui.horizontal(|ui| {
-                                let level = event.level;
-                                level.draw(ui);
-                                if result.occurrences.is_empty() {
-                                    ui.label(message);
-                                } else {
-                                    let mut previous = 0;
-                                    for occurrence in &result.occurrences {
-                                        ui.style_mut().spacing.item_spacing.x = 0.0;
-                                        ui.label(&message[previous..occurrence.start]);
-                                        let response = ui.label(
-                                            RichText::new(
-                                                &message[occurrence.start..occurrence.end],
-                                            )
-                                            .background_color(
-                                                if occurrences_offset == self.selected_occurrence {
-                                                    Color32::LIGHT_RED
-                                                } else {
-                                                    Color32::LIGHT_BLUE
-                                                },
-                                            ),
-                                        );
-                                        if occurrences_offset == self.selected_occurrence
-                                            && changed_occurrence
-                                        {
-                                            response.scroll_to_me(None);
-                                            changed_occurrence_here = false;
-                                        }
-                                        previous = occurrence.end;
-                                        occurrences_offset += 1;
-                                    }
-                                    ui.label(&message[previous..message.len()]);
-                                }
-                            });
+                        if props.level_filter.contains(&event.level) {
+                            html! {<div>{message}</div>}
+                        } else {
+                            html! {<span></span>}
                         }
                     }
-                    EventType::Node(node) => {
-                        (occurrences_offset, changed_occurrence_here) =
-                            self.draw_node(ctx, ui, *node, occurrences_offset)
-                    }
+                    EventType::Node(node_index) => html! {
+                        <DrawNode
+                            state={props.state.clone()}
+                            node_index={node_index}
+                            level_filter={props.level_filter.clone()}
+                        />
+                    },
                 }
-            }
-            (occurrences_offset, changed_occurrence_here)
-        };
+            }).collect::<Html>()
+        }}
+    };
 
-        let mut changed_occurrence = false;
-        if let Some(event) = event {
-            let span_title = event.span.as_ref().unwrap().name.clone();
-            let level = event.level;
+    if let Some(event) = event {
+        let span_title = event.span.as_ref().unwrap().name.clone();
+        let level = event.level;
 
-            let id = egui::Id::new(node_index);
-            let mut state = CollapsingState::load_with_default_open(ctx, id, node.expanded);
-            let header_response = ui.horizontal(|ui| {
-                ui.style_mut().visuals.extreme_bg_color = Color32::from_rgb(48, 49, 52);
-                // ui.style_mut().visuals.widgets. = Color32::from_rgb(48, 49, 52);
-                let visuals = &ui.style().visuals;
+        html! {
+            <div class="flex w-full">
+                <div class="flex">
+                    <svg xmlns="http://www.w3.org/2000/svg" onclick={onclick.clone()} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if !*collapsed { "block" } else { "hidden" } )}>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
 
-                let mut rect = ui.max_rect();
-                rect.set_height(18.0);
-                ui.painter().add(epaint::RectShape {
-                    rect,
-                    rounding: Rounding::none(),
-                    fill: visuals.extreme_bg_color,
-                    stroke: Default::default(),
-                });
-
-                state.show_toggle_button(ui, paint_default_icon);
-
-                level.draw(ui);
-
-                ui.label(span_title);
-            });
-            state.show_body_indented(&header_response.response, ui, |ui| {
-                (occurrences_offset, changed_occurrence) =
-                    body(ui, occurrences_offset, self.changed_occurrence);
-            });
-        } else {
-            (occurrences_offset, changed_occurrence) =
-                body(ui, occurrences_offset, self.changed_occurrence);
+                    <svg xmlns="http://www.w3.org/2000/svg" {onclick} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if *collapsed { "block" } else { "hidden" } )}>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </div>
+                <div>
+                    {level.draw()}
+                    {span_title}
+                    <span class={classes!(if *collapsed { "block" } else { "hidden" } )}>{body()}</span>
+                </div>
+            </div>
         }
-
-        (occurrences_offset, changed_occurrence)
+    } else {
+        body()
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Fields {
     message: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Span {
     name: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 struct Event {
     fields: Fields,
     level: LogLevel,
@@ -378,24 +361,24 @@ impl Display for LogLevel {
 }
 
 impl LogLevel {
-    fn draw(&self, ui: &mut Ui) {
-        let string = format!("[{self}]");
-        let pad = 7 - string.len();
-        ui.colored_label(
-            match self {
-                LogLevel::Trace => Color32::WHITE,
-                LogLevel::Debug => Color32::LIGHT_BLUE,
-                LogLevel::Info => Color32::GREEN,
-                LogLevel::Warn => Color32::YELLOW,
-                LogLevel::Error => Color32::RED,
-            },
-            RichText::from(format!(
-                "{string}{}",
-                std::iter::repeat(" ")
-                    .take(pad)
-                    .fold(String::new(), |a, b| a + b)
-            ))
-            .monospace(),
+    fn draw(&self) -> Html {
+        let label = format!("[{self}]");
+        let pad = 7 - label.len();
+        let color = match self {
+            LogLevel::Trace => "white",
+            LogLevel::Debug => "blue",
+            LogLevel::Info => "green",
+            LogLevel::Warn => "yellow",
+            LogLevel::Error => "red",
+        };
+        let color = format!("color: {color}");
+
+        let label = format!(
+            "{label}{}",
+            std::iter::repeat(" ")
+                .take(pad)
+                .fold(String::new(), |a, b| a + b)
         );
+        html! {<span style={color}>{label}</span>}
     }
 }

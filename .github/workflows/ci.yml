@@ -1,0 +1,38 @@
+name: build
+
+on: 
+  push:
+    branches: 
+      - master
+    paths-ignore:
+      - '**.md'
+      - '**.png'
+      - '**cd.yml'
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: jetli/trunk-action@v0.2.0
+      with:
+        # Optional version of trunk to install(eg. 'v0.8.1', 'latest')
+        version: 'latest'
+    - name: Build
+      run: |
+        trunk build
+    - name: cargo fmt & clippy
+      run: |
+        cargo fmt --all -- --check
+        cargo clippy -- --deny=warnings
+    #- name: Run tests
+    #  run: |
+    #    npm run test
+    - name: Deploy demo
+      uses: JamesIves/github-pages-deploy-action@v4.2.2
+      with:
+        branch: gh-pages
+        folder: dist
+        clean: true
