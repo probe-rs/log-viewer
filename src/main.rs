@@ -368,7 +368,7 @@ impl LogLevel {
             LogLevel::Trace => "white",
             LogLevel::Debug => "blue",
             LogLevel::Info => "green",
-            LogLevel::Warn => "yellow",
+            LogLevel::Warn => "text-orange-500",
             LogLevel::Error => "text-red-500",
         };
 
