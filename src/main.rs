@@ -1,14 +1,18 @@
+mod context_menu;
 mod gist;
+mod pill;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
 };
 
+use context_menu::ContextMenuItemProps;
 use gloo::{
     history::{BrowserHistory, History},
     net::http::Request,
 };
+use pill::Pill;
 use serde::{Deserialize, Serialize};
 // use wasm_bindgen::JsCast;
 // use web_sys::HtmlInputElement;
@@ -17,7 +21,10 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlTextAreaElement;
 use yew::prelude::*;
 
-use crate::gist::{Gist, GistFile};
+use crate::{
+    context_menu::{ContextMenu, ContextMenuProvider},
+    gist::{Gist, GistFile},
+};
 
 fn main() {
     yew::Renderer::<App>::new().render();
@@ -292,7 +299,8 @@ fn App() -> Html {
         (),
     );
 
-    html! {<>
+    html! {<ContextMenuProvider>
+        <ContextMenu />
         <div class={classes!["w-full", "h-full", "bg-white", if *show_upload { "fixed" } else { "hidden" }]}>
             <button onclick={onupload} class="border border-black px-2 py-1 m-3">{"Upload"}</button>
             <div class="w-full h-full p-3">
@@ -308,13 +316,13 @@ fn App() -> Html {
             <button onclick={oncreate} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]}>{"Create"}</button>
             <div class="m-3">
                 {match (&*gist, &*state) {
-                    (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={(*level_filter).clone()} />},
+                    (Ok(_gist), Some(state)) => html!{<DrawNode state={state.clone()} node_index={0} level_filter={level_filter.clone()} />},
                     (Err(error), _) => error.to_string().into(),
                     _ => unreachable!()
                 }}
             </div>
         </div>
-    </>}
+    </ContextMenuProvider>}
 }
 
 #[derive(Clone, PartialEq, Properties)]
@@ -361,7 +369,7 @@ fn level_picker(props: &LevelPickerProps) -> Html {
 struct DrawNodeProps {
     state: State,
     node_index: usize,
-    level_filter: HashSet<LogLevel>,
+    level_filter: UseStateHandle<HashSet<LogLevel>>,
 }
 
 #[function_component(DrawNode)]
@@ -385,8 +393,13 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                         let event = &props.state.events[*message];
                         let message = &event.fields.message;
                         let level = &event.level;
+                        let target = &event.target;
                         let hidden = !props.level_filter.contains(&event.level);
-                        html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>{level.draw()}{message}</pre>}
+                        html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>
+                            {level.draw(props.level_filter.clone())}
+                            <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
+                            {message}
+                        </pre>}
 
                     }
                     EventType::Node(node_index) => html! {
@@ -404,6 +417,7 @@ fn draw_node(props: &DrawNodeProps) -> Html {
     if let Some(event) = event {
         let span_title = event.span.as_ref().unwrap().name.clone();
         let level = event.level;
+        let target = &event.target;
 
         html! {
             <div class="flex w-full py-1">
@@ -418,7 +432,8 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                     <div class={classes!("grow", "w-3", "border-r", "border-black", if *collapsed { "block" } else { "hidden" } )}></div>
                 </div>
                 <div>
-                    {level.draw()}
+                    {level.draw(props.level_filter.clone())}
+                    <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
                     {span_title}
                     <span class={classes!["pl-3","pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
                 </div>
@@ -466,10 +481,11 @@ impl Display for LogLevel {
 }
 
 impl LogLevel {
-    fn draw(&self) -> Html {
+    fn draw(&self, level_filter: UseStateHandle<HashSet<LogLevel>>) -> Html {
         let label = format!("[{self}]");
         let pad = 7 - label.len();
-        let color = self.color();
+        let color = self.color().to_string();
+        let level = *self;
 
         let label = format!(
             "{label}{}",
@@ -477,7 +493,39 @@ impl LogLevel {
                 .take(pad)
                 .fold(String::new(), |a, b| a + b)
         );
-        html! {<span class={classes!["m-1","p-1", "rounded-md", format!("bg-{color}")]}>{label}</span>}
+
+        let context_menu = vec![
+            ContextMenuItemProps {
+                callback: {
+                    let level_filter = level_filter.clone();
+                    Callback::from(move |_| {
+                        level_filter.set({
+                            let mut filter = HashSet::new();
+                            filter.insert(level);
+                            filter
+                        });
+                    })
+                },
+                title: format!("Only show {self}"),
+            },
+            ContextMenuItemProps {
+                callback: Callback::from(move |_| {
+                    level_filter.set({
+                        let mut filter = (*level_filter).clone();
+                        filter.remove(&level);
+                        filter
+                    });
+                }),
+                title: format!("Don't show {self}"),
+            },
+        ];
+
+        html! {<Pill
+                {color}
+                {context_menu}
+            >
+                {label}
+        </Pill>}
     }
 
     fn color(&self) -> &str {
