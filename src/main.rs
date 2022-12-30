@@ -109,6 +109,79 @@ enum EventType {
     Node(usize),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct LevelFilter {
+    matrix: HashMap<String, HashSet<LogLevel>>,
+}
+
+impl LevelFilter {
+    pub fn show(&self, target: &str, level: &LogLevel) -> bool {
+        let selection = if self.matrix.len() == 1 {
+            self.matrix.get("")
+        } else {
+            self.matrix.get(target)
+        };
+
+        if let Some(selection) = selection {
+            selection.contains(level)
+        } else {
+            false
+        }
+    }
+
+    pub fn new(matrix: HashMap<String, HashSet<LogLevel>>) -> Self {
+        Self { matrix }
+    }
+
+    pub fn add_level(mut self, target: Option<&str>, level: LogLevel) -> Self {
+        if let Some(target) = target {
+            let target = self.matrix.entry(target.to_string()).or_default();
+            target.insert(level);
+        } else {
+            for target in self.matrix.values_mut() {
+                target.insert(level);
+            }
+        }
+        Self {
+            matrix: self.matrix,
+        }
+    }
+
+    pub fn remove_level(mut self, target: Option<&str>, level: &LogLevel) -> Self {
+        if let Some(target) = target {
+            let target = self.matrix.entry(target.to_string()).or_default();
+            target.remove(level);
+        } else {
+            for target in self.matrix.values_mut() {
+                target.remove(level);
+            }
+        }
+        Self {
+            matrix: self.matrix,
+        }
+    }
+
+    pub fn only_level(mut self, target: Option<&str>, level: LogLevel) -> Self {
+        let make_target = || {
+            let mut filter = HashSet::new();
+            filter.insert(level);
+            filter
+        };
+
+        if let Some(target) = target {
+            let target = self.matrix.entry(target.to_string()).or_default();
+            *target = make_target();
+        } else {
+            for target in self.matrix.values_mut() {
+                *target = make_target();
+            }
+        }
+        Self {
+            matrix: self.matrix,
+        }
+    }
+}
+
 #[function_component]
 fn App() -> Html {
     wasm_logger::init(wasm_logger::Config::default());
@@ -122,7 +195,9 @@ fn App() -> Html {
             LogLevel::Debug,
             LogLevel::Trace,
         ]);
-        set
+        let mut map = HashMap::new();
+        map.insert("".to_string(), set);
+        LevelFilter::new(map)
     });
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
@@ -327,8 +402,8 @@ fn App() -> Html {
 
 #[derive(Clone, PartialEq, Properties)]
 struct LevelPickerProps {
-    level_filter: HashSet<LogLevel>,
-    on_select: Callback<HashSet<LogLevel>>,
+    level_filter: LevelFilter,
+    on_select: Callback<LevelFilter>,
 }
 
 #[function_component(LevelPicker)]
@@ -337,13 +412,13 @@ fn level_picker(props: &LevelPickerProps) -> Html {
         let level_filter = props.level_filter.clone();
         let on_select = props.on_select.clone();
         move |_| {
-            let mut level_filter = level_filter.clone();
-            if level_filter.contains(&level) {
-                level_filter.remove(&level);
+            let level_filter = level_filter.clone();
+            let level_filter = if level_filter.show("", &level) {
+                level_filter.remove_level(Some(""), &level)
             } else {
-                level_filter.insert(level);
-            }
-            on_select.emit(level_filter.clone())
+                level_filter.add_level(Some(""), level)
+            };
+            on_select.emit(level_filter)
         }
     };
 
@@ -355,7 +430,7 @@ fn level_picker(props: &LevelPickerProps) -> Html {
             LogLevel::Debug,
             LogLevel::Trace,
         ].into_iter().map(|level| {
-            let checked = props.level_filter.contains(&level);
+            let checked = props.level_filter.show("", &level);
             let color = level.color();
             html!{<button onclick={onselect(level)} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black",format!("bg-{color}")]}>
                 <label class="pr-2">{format!("{level}")}</label>
@@ -369,7 +444,7 @@ fn level_picker(props: &LevelPickerProps) -> Html {
 struct DrawNodeProps {
     state: State,
     node_index: usize,
-    level_filter: UseStateHandle<HashSet<LogLevel>>,
+    level_filter: UseStateHandle<LevelFilter>,
 }
 
 #[function_component(DrawNode)]
@@ -394,7 +469,7 @@ fn draw_node(props: &DrawNodeProps) -> Html {
                         let message = &event.fields.message;
                         let level = &event.level;
                         let target = &event.target;
-                        let hidden = !props.level_filter.contains(&event.level);
+                        let hidden = !props.level_filter.show(target, level);
                         html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>
                             {level.draw(props.level_filter.clone())}
                             <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
@@ -481,7 +556,7 @@ impl Display for LogLevel {
 }
 
 impl LogLevel {
-    fn draw(&self, level_filter: UseStateHandle<HashSet<LogLevel>>) -> Html {
+    fn draw(&self, level_filter: UseStateHandle<LevelFilter>) -> Html {
         let label = format!("[{self}]");
         let pad = 7 - label.len();
         let color = self.color().to_string();
@@ -499,22 +574,14 @@ impl LogLevel {
                 callback: {
                     let level_filter = level_filter.clone();
                     Callback::from(move |_| {
-                        level_filter.set({
-                            let mut filter = HashSet::new();
-                            filter.insert(level);
-                            filter
-                        });
+                        level_filter.set((*level_filter).clone().only_level(None, level));
                     })
                 },
                 title: format!("Only show {self}"),
             },
             ContextMenuItemProps {
                 callback: Callback::from(move |_| {
-                    level_filter.set({
-                        let mut filter = (*level_filter).clone();
-                        filter.remove(&level);
-                        filter
-                    });
+                    level_filter.set((*level_filter).clone().remove_level(None, &level));
                 }),
                 title: format!("Don't show {self}"),
             },
