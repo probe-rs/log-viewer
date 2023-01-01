@@ -19,7 +19,7 @@ pub fn pill(props: &PillProps) -> Html {
     let oncontextmenu = {
         move |event: MouseEvent| {
             event.prevent_default();
-            event.cancel_bubble();
+            event.set_cancel_bubble(true);
             context_menu.dispatch(ContextMenuAction::Show(
                 event.client_x(),
                 event.client_y(),

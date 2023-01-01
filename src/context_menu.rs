@@ -55,7 +55,7 @@ pub fn context_menu_item(props: &ContextMenuItemProps) -> Html {
         let callback = props.callback.clone();
         move |event: MouseEvent| {
             event.prevent_default();
-            event.cancel_bubble();
+            event.set_cancel_bubble(true);
             callback.emit(())
         }
     };

@@ -7,7 +7,10 @@ mod pill;
 mod proto;
 mod state;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap},
+    str::FromStr,
+};
 
 use gloo::{
     history::{BrowserHistory, History},
@@ -23,6 +26,7 @@ use crate::{
     info_node::InfoNode,
     level_filter::LevelFilter,
     level_picker::LevelPicker,
+    // level_picker::LevelPicker,
     proto::log_level::LogLevel,
     state::State,
 };
@@ -36,18 +40,61 @@ fn App() -> Html {
     wasm_logger::init(wasm_logger::Config::default());
 
     let level_filter = use_state(|| {
-        let mut set = HashSet::new();
-        set.extend([
-            LogLevel::Error,
-            LogLevel::Warn,
-            LogLevel::Info,
-            LogLevel::Debug,
-            LogLevel::Trace,
-        ]);
         let mut map = HashMap::new();
-        map.insert("".to_string(), set);
+        let history = BrowserHistory::new();
+        let location = history.location();
+        let query = location.query::<HashMap<String, String>>().unwrap();
+        for (key, value) in query {
+            if key.starts_with("filter") {
+                let key = key.replace('-', "::").replace("filter::", "");
+                map.insert(
+                    if key != "filter" { Some(key) } else { None },
+                    LogLevel::from_str(&value).unwrap(),
+                );
+            }
+        }
+        map.insert(None, LogLevel::Trace);
         LevelFilter::new(map)
     });
+
+    use_effect_with_deps(
+        |level_filter| {
+            let history = BrowserHistory::new();
+            let location = history.location();
+
+            history
+                .push_with_query(location.path(), {
+                    let mut map = location.query::<HashMap<String, String>>().unwrap();
+                    let mut remove_keys = vec![];
+                    for key in map.keys() {
+                        if key.starts_with("filter") {
+                            remove_keys.push(key.clone());
+                        }
+                    }
+                    for key in remove_keys {
+                        map.remove(&key);
+                    }
+                    for (target, filter) in level_filter.matrix() {
+                        map.insert(
+                            format!(
+                                "filter{}",
+                                if let Some(target) = target {
+                                    format!("::{target}")
+                                } else {
+                                    "".into()
+                                }
+                            )
+                            .replace("::", "-"),
+                            filter.to_string(),
+                        );
+                    }
+                    map
+                })
+                .unwrap();
+        },
+        level_filter.clone(),
+    );
+
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
     let show_upload = use_state(|| false);

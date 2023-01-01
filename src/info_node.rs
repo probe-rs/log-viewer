@@ -1,7 +1,12 @@
-use yew::{classes, function_component, html, use_state, Html, Properties, UseStateHandle};
+use yew::{
+    classes, function_component, html, use_state, Callback, Html, Properties, UseStateHandle,
+};
 
 use crate::{
+    context_menu::ContextMenuItemProps,
     level_filter::LevelFilter,
+    pill::Pill,
+    proto::log_level::LogLevel,
     state::{EventType, State},
 };
 
@@ -34,10 +39,38 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                         let message = &event.fields.message;
                         let level = &event.level;
                         let target = &event.target;
-                        let hidden = !props.level_filter.show(target, level);
+                        let hidden = !props.level_filter.show(Some(target.clone()), level);
+
+                        let context_menu = vec![
+                            ContextMenuItemProps {
+                                callback: {
+                                    let level_filter = props.level_filter.clone();
+                                    let target = target.clone();
+                                    let level = *level;
+                                    Callback::from(move |_| {
+                                        level_filter
+                                            .set((*level_filter)
+                                            .clone()
+                                            .set_level(None, LogLevel::None)
+                                            .set_level(Some(target.clone()), level));
+                                    })
+                                },
+                                title: format!("Only show {target}"),
+                            },
+                            ContextMenuItemProps {
+                                callback: {
+                                    let level_filter = props.level_filter.clone();
+                                    let target = target.clone();
+                                    Callback::from(move |_| {
+                                    level_filter.set((*level_filter).clone().set_level(Some(target.clone()), LogLevel::None))
+                                })},
+                                title: format!("Don't show {target}"),
+                            },
+                        ];
+
                         html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>
                             {level.draw(props.level_filter.clone())}
-                            <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
+                            <Pill color="gray-200" {context_menu}><span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span></Pill>
                             {message}
                         </pre>}
 
