@@ -68,7 +68,7 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                             },
                         ];
 
-                        html! {<pre class={classes!["py-1", if hidden { "hidden" } else { "block" }]}>
+                        html! {<pre class={classes!["pl-6", "py-1", if hidden { "hidden" } else { "block" }]}>
                             {level.draw(props.level_filter.clone())}
                             <Pill color="gray-200" {context_menu}><span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span></Pill>
                             {message}
@@ -108,7 +108,7 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                     {level.draw(props.level_filter.clone())}
                     <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
                     {span_title}
-                    <span class={classes!["pl-3","pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
+                    <span class={classes!["pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
                 </div>
             </div>
         }
