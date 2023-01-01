@@ -640,6 +640,9 @@ function getImports() {
         const ret = getObject(arg0).cancelBubble;
         return ret;
     };
+    imports.wbg.__wbg_setcancelBubble_023f96976a3a7d23 = function(arg0, arg1) {
+        getObject(arg0).cancelBubble = arg1 !== 0;
+    };
     imports.wbg.__wbg_composedPath_160ed014dc4d787f = function(arg0) {
         const ret = getObject(arg0).composedPath();
         return addHeapObject(ret);
@@ -901,12 +904,12 @@ function getImports() {
         const ret = wasm.memory;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper9118 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 786, __wbg_adapter_32);
+    imports.wbg.__wbindgen_closure_wrapper9348 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 798, __wbg_adapter_32);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper9330 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 814, __wbg_adapter_35);
+    imports.wbg.__wbindgen_closure_wrapper9560 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 826, __wbg_adapter_35);
         return addHeapObject(ret);
     };
 
@@ -945,7 +948,7 @@ function initSync(module) {
 
 async function init(input) {
     if (typeof input === 'undefined') {
-        input = new URL('log-viewer-f9f7ee1d2c3bccd4_bg.wasm', import.meta.url);
+        input = new URL('log-viewer-7dd5202212b9ac0f_bg.wasm', import.meta.url);
     }
     const imports = getImports();
 
