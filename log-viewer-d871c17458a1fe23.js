@@ -948,7 +948,7 @@ function initSync(module) {
 
 async function init(input) {
     if (typeof input === 'undefined') {
-        input = new URL('log-viewer-7dd5202212b9ac0f_bg.wasm', import.meta.url);
+        input = new URL('log-viewer-d871c17458a1fe23_bg.wasm', import.meta.url);
     }
     const imports = getImports();
 
