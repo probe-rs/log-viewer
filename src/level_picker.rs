@@ -57,10 +57,19 @@ pub fn level_picker(props: &LevelPickerProps) -> Html {
             let open = (*open).clone();
             html!{<div class="flex">
                 <button onclick={onopen} class={classes!["flex", "ml-3","my-3", "px-2", "py-1", "border", "border-black", format!("bg-{color}")]}>
-                    <span>{target_string}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" class="flex pl-1 pt-1 w-5 h-5 cursor-pointer" onclick={onremove}>
+                    <span>{&target_string}</span>
+                    { if target.is_some() { html!{ <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                        stroke="currentColor"
+                        class={classes!["flex", "pl-1", "pt-1", "w-5", "h-5", "cursor-pointer"]}
+                        onclick={onremove}
+                    >
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
+                    } } else { html!{ } } }
                 </button>
                 <ul class={classes!(if open == Some(target.clone()) { "block" } else { "hidden" })}>
                 {
