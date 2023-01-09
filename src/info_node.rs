@@ -6,7 +6,7 @@ use crate::{
     context_menu::ContextMenuItemProps,
     level_filter::LevelFilter,
     pill::Pill,
-    proto::log_level::LogLevel,
+    proto::log_level::{LogLevel, LogLevelLabel},
     state::{EventType, State},
 };
 
@@ -37,42 +37,66 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                     EventType::Message(message) => {
                         let event = &props.state.events[*message];
                         let message = &event.fields.message;
-                        let level = &event.level;
+                        let level = event.level;
                         let target = &event.target;
-                        let hidden = !props.level_filter.show(Some(target.clone()), level);
+                        let hidden = !props.level_filter.show(Some(target.clone()), &level);
+                        let targets = &target.split("::").collect::<Vec<_>>();
+                        let level_filter = props.level_filter.clone();
 
-                        let context_menu = vec![
-                            ContextMenuItemProps {
-                                callback: {
-                                    let level_filter = props.level_filter.clone();
-                                    let target = target.clone();
-                                    let level = *level;
-                                    Callback::from(move |_| {
-                                        level_filter
-                                            .set((*level_filter)
-                                            .clone()
-                                            .set_level(None, LogLevel::None)
-                                            .set_level(Some(target.clone()), level));
-                                    })
+                        fn nest(level_filter: UseStateHandle<LevelFilter>, level: LogLevel, targets: &str, target: &str) -> Html {
+                            let context_menu = vec![
+                                ContextMenuItemProps {
+                                    callback: {
+                                        let level_filter = level_filter.clone();
+                                        let targets = targets.to_string();
+                                        Callback::from(move |_| {
+                                            level_filter
+                                                .set((*level_filter)
+                                                .clone()
+                                                .set_level(None, LogLevel::None)
+                                                .set_level(Some(targets.to_string()), level));
+                                        })
+                                    },
+                                    title: format!("Only show {targets}"),
                                 },
-                                title: format!("Only show {target}"),
-                            },
-                            ContextMenuItemProps {
-                                callback: {
-                                    let level_filter = props.level_filter.clone();
-                                    let target = target.clone();
-                                    Callback::from(move |_| {
-                                    level_filter.set((*level_filter).clone().set_level(Some(target.clone()), LogLevel::None))
-                                })},
-                                title: format!("Don't show {target}"),
-                            },
-                        ];
+                                ContextMenuItemProps {
+                                    callback: {
+                                        let level_filter = level_filter;
+                                        let targets = targets.to_string();
+                                        Callback::from(move |_| {
+                                        level_filter.set((*level_filter).clone().set_level(Some(targets.to_string()), LogLevel::None))
+                                    })},
+                                    title: format!("Don't show {targets}"),
+                                },
+                            ];
+                            let classes = classes!["p-1", "-m-1", "rounded-md", "hover:bg-gray-200"];
 
-                        html! {<pre class={classes!["pl-6", "py-1", if hidden { "hidden" } else { "block" }]}>
-                            {level.draw(props.level_filter.clone())}
-                            <Pill color="gray-200" {context_menu}><span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span></Pill>
+                            html!{ <Pill {context_menu} {classes}>{target}</Pill> }
+                        }
+
+                        html! {<span class={classes!["pl-6", "py-1", "m-1", "flex", "cursor-default", "select-none", if hidden { "hidden" } else { "block" }]}>
+                            <LogLevelLabel {level} />
+                            <span class={classes!["p-1", "px-2", "rounded-lg", format!("bg-{}", level.color())]}>
+                            {for targets.iter().enumerate().scan(String::new(), |state, (i, target)| {
+                                if i == 0 {
+                                    state.push_str(target);
+                                } else {
+                                    *state = format!("{state}::{target}");
+                                }
+                                Some((i, state.clone(), target))}).map(|(i, ts, t)| { html!{<>
+                                    {if i != 0 {
+                                        html!{{"::"}}
+                                    } else {
+                                        html!{}
+                                    }}
+                                    { nest(level_filter.clone(), level, &ts, t) }
+                                </>}})
+                            }
+                            </span>
+                            <pre>
                             {message}
-                        </pre>}
+                            </pre>
+                        </span>}
 
                     }
                     EventType::Node(node_index) => html! {
@@ -105,7 +129,7 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                     <div class={classes!("grow", "w-3", "border-r", "border-black", if *collapsed { "block" } else { "hidden" } )}></div>
                 </div>
                 <div>
-                    {level.draw(props.level_filter.clone())}
+                    <LogLevelLabel {level} />
                     <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
                     {span_title}
                     <span class={classes!["pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>

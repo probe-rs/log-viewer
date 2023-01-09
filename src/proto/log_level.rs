@@ -1,9 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use serde::{Deserialize, Serialize};
-use yew::{html, Callback, Html, UseStateHandle};
-
-use crate::{context_menu::ContextMenuItemProps, level_filter::LevelFilter, pill::Pill};
+use yew::{classes, function_component, html, Html, Properties};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Default)]
 #[serde(rename_all = "UPPERCASE")]
@@ -20,24 +18,13 @@ pub enum LogLevel {
 impl Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = format!("{:?}", self).to_ascii_uppercase();
-        write!(f, "{}", text)
+        f.pad(&text)
     }
 }
 
 impl PartialOrd for LogLevel {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        fn num(level: &LogLevel) -> usize {
-            match level {
-                LogLevel::Trace => 0,
-                LogLevel::Debug => 1,
-                LogLevel::Info => 2,
-                LogLevel::Warn => 3,
-                LogLevel::Error => 4,
-                LogLevel::None => 5,
-            }
-        }
-
-        Some(num(self).cmp(&num(other)))
+        Some(self.num().cmp(&other.num()))
     }
 }
 
@@ -58,45 +45,6 @@ impl FromStr for LogLevel {
 }
 
 impl LogLevel {
-    pub fn draw(&self, level_filter: UseStateHandle<LevelFilter>) -> Html {
-        let label = format!("[{self}]");
-        let pad = 7 - label.len();
-        let color = self.color().to_string();
-        let level = *self;
-
-        let label = format!(
-            "{label}{}",
-            std::iter::repeat(" ")
-                .take(pad)
-                .fold(String::new(), |a, b| a + b)
-        );
-
-        let context_menu = vec![
-            ContextMenuItemProps {
-                callback: {
-                    let level_filter = level_filter.clone();
-                    Callback::from(move |_| {
-                        level_filter.set((*level_filter).clone().set_level(None, level));
-                    })
-                },
-                title: format!("Only show {self}"),
-            },
-            ContextMenuItemProps {
-                callback: Callback::from(move |_| {
-                    level_filter.set((*level_filter).clone().set_level(None, level));
-                }),
-                title: format!("Don't show {self}"),
-            },
-        ];
-
-        html! {<Pill
-                {color}
-                {context_menu}
-            >
-                {label}
-        </Pill>}
-    }
-
     pub fn color(&self) -> &str {
         match self {
             LogLevel::Trace => "gray-500",
@@ -107,4 +55,44 @@ impl LogLevel {
             LogLevel::None => "white",
         }
     }
+
+    fn num(&self) -> usize {
+        match self {
+            LogLevel::Trace => 0,
+            LogLevel::Debug => 1,
+            LogLevel::Info => 2,
+            LogLevel::Warn => 3,
+            LogLevel::Error => 4,
+            LogLevel::None => 5,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Properties)]
+pub struct LogLevelLabelProps {
+    pub level: LogLevel,
+}
+
+lazy_static::lazy_static! {
+    /// This is an example for using doc comment attributes
+    static ref CACHE: Vec<(String, String)> = [
+        LogLevel::Trace,
+    LogLevel::Debug,
+    LogLevel::Info,
+    LogLevel::Warn,
+    LogLevel::Error,
+    LogLevel::None].iter().map(|level|{
+        let color = level.color().to_string();
+        let label = format!("[{level}]");
+        (format!(
+            "{label: <7}",
+        ), format!("bg-{}", color))
+    }).collect();
+}
+
+#[function_component(LogLevelLabel)]
+pub fn log_level_label(props: &LogLevelLabelProps) -> Html {
+    let (label, color) = &CACHE[props.level.num()];
+
+    html! {<span class={classes!["mr-1", "p-1", "rounded-md", color]}>{label}</span>}
 }

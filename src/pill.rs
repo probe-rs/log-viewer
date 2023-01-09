@@ -1,14 +1,14 @@
 use web_sys::MouseEvent;
-use yew::{classes, function_component, html, use_context, Children, Html, Properties};
+use yew::{function_component, html, use_context, Children, Classes, Html, Properties};
 
 use crate::context_menu::{ContextMenuAction, ContextMenuContext, ContextMenuItemProps};
 
 #[derive(Clone, PartialEq, Properties)]
 pub struct PillProps {
-    pub color: String,
     #[prop_or_default]
     pub children: Children,
     pub context_menu: Option<Vec<ContextMenuItemProps>>,
+    pub classes: Option<Classes>,
 }
 
 #[function_component(Pill)]
@@ -29,7 +29,7 @@ pub fn pill(props: &PillProps) -> Html {
     };
 
     html! {<span
-            class={classes!["m-1","p-1", "rounded-md", format!("bg-{}", props.color)]}
+            class={&props.classes}
             {oncontextmenu}
         >
             {for props.children.iter()}

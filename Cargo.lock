@@ -379,6 +379,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
 name = "libc"
 version = "0.2.138"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -400,6 +406,7 @@ dependencies = [
  "anyhow",
  "gloo",
  "itertools",
+ "lazy_static",
  "log",
  "serde",
  "serde_json",
@@ -870,8 +877,7 @@ checksum = "f40009d85759725a34da6d89a94e63d7bdc50a862acf0dbc7c8e488f1edcb6f5"
 [[package]]
 name = "yew"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dbecfe44343b70cc2932c3eb445425969ae21754a8ab3a0966981c1cf7af1cc"
+source = "git+https://github.com/yewstack/yew.git#b55be12d3c852a652d906b5883726f63dcc4f752"
 dependencies = [
  "console_error_panic_hook",
  "futures",
@@ -895,8 +901,7 @@ dependencies = [
 [[package]]
 name = "yew-macro"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b64c253c1d401f1ea868ca9988db63958cfa15a69f739101f338d6f05eea8301"
+source = "git+https://github.com/yewstack/yew.git#b55be12d3c852a652d906b5883726f63dcc4f752"
 dependencies = [
  "boolinator",
  "once_cell",
