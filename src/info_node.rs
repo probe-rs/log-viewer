@@ -2,10 +2,10 @@ use yew::{
     classes, function_component, html, use_state, Callback, Html, Properties, UseStateHandle,
 };
 
-use crate::{
-    context_menu::ContextMenuItemProps,
+use crate::{context_menu::ContextMenuItemProps, pill::Pill};
+
+use log_viewer::{
     level_filter::LevelFilter,
-    pill::Pill,
     proto::log_level::{LogLevel, LogLevelLabel},
     state::{EventType, State},
 };
@@ -101,6 +101,7 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                     }
                     EventType::Node(node_index) => html! {
                         <InfoNode
+                            key={*node_index}
                             state={props.state.clone()}
                             node_index={node_index}
                             level_filter={props.level_filter.clone()}

@@ -4,6 +4,20 @@ use serde::{Deserialize, Serialize};
 
 // A Gist as received by Github's v3 API.
 #[derive(Serialize, Deserialize, Debug)]
+pub struct CreateGist {
+    pub public: bool,
+    pub files: BTreeMap<String, CreateGistFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CreateGistFile {
+    pub content: String,
+}
+
+// A Gist as received by Github's v3 API.
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Gist {
     #[serde(skip_serializing)]
     pub id: Option<String>,
@@ -14,21 +28,15 @@ pub struct Gist {
 }
 
 impl Gist {
-    pub fn current_file(&self) -> Option<String> {
-        self.files.values().next().map(|v| v.content.clone())
+    pub fn current_file(&self) -> Option<&GistFile> {
+        self.files.values().next()
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GistFile {
-    #[serde(skip_serializing, default = "GistFile::default_name")]
-    pub name: String,
-    #[serde(rename(serialize = "content"))]
+    pub filename: String,
     pub content: String,
-}
-
-impl GistFile {
-    pub fn default_name() -> String {
-        String::from("content")
-    }
+    pub raw_url: String,
+    pub truncated: bool,
 }

@@ -1,6 +1,13 @@
 use yew::Properties;
 
-use crate::proto::Event;
+use crate::proto::{Event, Span};
+
+#[derive(Debug)]
+pub struct ParseError {
+    line_no: usize,
+    content: String,
+    error: serde_json::Error,
+}
 
 #[derive(Debug, Clone, PartialEq, Properties)]
 pub struct State {
@@ -9,14 +16,25 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(data: &str) -> Self {
+    pub fn new(data: &str) -> Result<Self, ParseError> {
+        // TODO: Show lines had errors
         let events: Result<Vec<Event>, _> = data
             .lines()
-            .filter(|l| l.starts_with('{'))
-            .map(serde_json::from_str)
+            .enumerate()
+            .filter(|(_line_no, l)| l.starts_with('{'))
+            .map(|(line_no, line)| {
+                serde_json::from_str(line).map_err(|e| ParseError {
+                    line_no,
+                    content: line.to_string(),
+                    error: e,
+                })
+            })
+            .filter(|r| r.is_ok())
             .collect();
 
-        let events = events.expect("Failed to parse events");
+        let events = events?;
+
+        log::debug!("{} events in log file", events.len());
 
         let mut nodes_storage: Vec<Node> = vec![Node {
             index: None,
@@ -24,10 +42,18 @@ impl State {
             expanded: true,
         }];
 
-        let mut tree: Vec<usize> = vec![0];
+        let mut tree: Vec<(usize, Option<&Span>)> = vec![(0, None)];
 
         for (index, event) in events.iter().enumerate() {
-            let current_node: usize = *tree.last().expect("at least one node");
+            let (current_node, current_span) = tree.last().expect("at least one node");
+
+            let current_node = *current_node;
+
+            // The log viewer does not support actual parallel traces yet, so
+            // we limit ourselves to the probe-rs crate for now.
+            if !event.target.starts_with("probe_rs") {
+                continue;
+            }
 
             match &event.fields.message[..] {
                 "enter" => {
@@ -45,25 +71,47 @@ impl State {
                         .children
                         .push(EventType::Node(node_index));
 
-                    tree.push(node_index);
+                    log::debug!("Entering span {:?}", event.span.as_ref());
+
+                    tree.push((node_index, event.span.as_ref()));
                 }
                 "exit" => {
-                    let _ = tree.pop();
+                    if &event.span.as_ref() != current_span {
+                        log::debug!(
+                            "Ignoring event: {:?}, span {:?} does not match expected span {:?}",
+                            event.fields.message,
+                            event.span,
+                            current_span
+                        );
+                    } else {
+                        let _ = tree.pop();
+                    }
                 }
                 "new" => (),
                 "close" => (),
                 _ => {
-                    nodes_storage[current_node]
-                        .children
-                        .push(EventType::Message(index));
+                    if &event.span.as_ref() == current_span {
+                        nodes_storage[current_node]
+                            .children
+                            .push(EventType::Message(index));
+                    } else {
+                        log::debug!(
+                            "Ignoring event: {:?}, span {:?} does not match expected span {:?}",
+                            event.fields.message,
+                            event.span,
+                            current_span
+                        );
+                    }
                 }
             }
         }
 
-        Self {
+        log::debug!("Processed all events");
+
+        Ok(Self {
             events,
             nodes: nodes_storage,
-        }
+        })
     }
 }
 

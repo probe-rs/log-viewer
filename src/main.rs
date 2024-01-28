@@ -1,11 +1,8 @@
 mod context_menu;
 mod gist;
 mod info_node;
-mod level_filter;
 mod level_picker;
 mod pill;
-mod proto;
-mod state;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -22,23 +19,30 @@ use yew::prelude::*;
 
 use crate::{
     context_menu::{ContextMenu, ContextMenuProvider},
-    gist::{Gist, GistFile},
+    gist::{CreateGist, CreateGistFile, Gist},
     info_node::InfoNode,
-    level_filter::LevelFilter,
     level_picker::LevelPicker,
     // level_picker::LevelPicker,
-    proto::log_level::LogLevel,
-    state::State,
 };
 
+use log_viewer::{level_filter::LevelFilter, proto::log_level::LogLevel, state::State};
+
+fn gh_token() -> Option<&'static str> {
+    std::option_env!("GH_TOKEN")
+}
+
+const GH_API_VERSION: &str = "2022-11-28";
+
 fn main() {
+    wasm_logger::init(wasm_logger::Config::default());
+
+    log::info!("Testing log output...");
+
     yew::Renderer::<App>::new().render();
 }
 
 #[function_component]
 fn App() -> Html {
-    wasm_logger::init(wasm_logger::Config::default());
-
     let level_filter = use_state(|| {
         let mut map = HashMap::new();
         let history = BrowserHistory::new();
@@ -175,16 +179,13 @@ fn App() -> Html {
             wasm_bindgen_futures::spawn_local(async move {
                 let upload_value = upload_value.clone();
                 let local = || async move {
-                    let token = std::env!("GH_TOKEN");
-                    let gist = Gist {
-                        id: None,
+                    let gist = CreateGist {
                         public: true,
                         files: {
                             let mut map = BTreeMap::new();
                             map.insert(
                                 "trace.json".into(),
-                                GistFile {
-                                    name: "trace.json".into(),
+                                CreateGistFile {
                                     content: (*upload_value).clone(),
                                 },
                             );
@@ -192,8 +193,15 @@ fn App() -> Html {
                         },
                         description: Some("probe-rs debug trace".into()),
                     };
-                    let response = Request::post("https://api.github.com/gists")
-                        .header("Authorization", &format!("Bearer {token}"))
+
+                    let mut request = Request::post("https://api.github.com/gists")
+                        .header("X-GitHub-Api-Version", GH_API_VERSION);
+
+                    if let Some(token) = gh_token() {
+                        request = request.header("Authorization", &format!("Bearer {token}"));
+                    }
+
+                    let response = request
                         .json(&gist)?
                         .send()
                         .await
@@ -210,7 +218,11 @@ fn App() -> Html {
                 };
                 let result = local().await;
                 if let Ok(gist) = &result {
-                    let state = gist.current_file().map(|s| State::new(&s));
+                    let state = gist
+                        .current_file()
+                        .map(|gist| State::new(&gist.content))
+                        .transpose()
+                        .unwrap();
                     state_clone.set(state);
                     let history = BrowserHistory::new();
 
@@ -242,12 +254,20 @@ fn App() -> Html {
                     let hash = location
                         .get("gist")
                         .ok_or_else(|| anyhow::anyhow!("A gist hash must be provided"))?;
-                    let token = std::env!("GH_TOKEN");
-                    let response = Request::get(&format!("https://api.github.com/gists/{hash}"))
-                        .header("Authorization", &format!("Bearer {token}"))
+
+                    log::debug!("Loading gist {}", hash);
+                    let mut request = Request::get(&format!("https://api.github.com/gists/{hash}"))
+                        .header("X-GitHub-Api-Version", GH_API_VERSION);
+
+                    if let Some(token) = gh_token() {
+                        request = request.header("Authorization", &format!("Bearer {token}"));
+                    }
+
+                    let response = request
                         .send()
                         .await
                         .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+
                     if response.status() == 200 {
                         let response: Gist = response
                             .json()
@@ -260,8 +280,29 @@ fn App() -> Html {
                 };
 
                 let result = local().await;
+
                 if let Ok(gist) = &result {
-                    let state = gist.current_file().map(|s| State::new(&s));
+                    let current_file = gist.current_file().unwrap();
+
+                    log::debug!("Using file {} from gist", current_file.filename);
+
+                    let content = if current_file.truncated {
+                        log::info!(
+                            "File {} is truncated, downloading complete file...",
+                            current_file.filename
+                        );
+                        Request::get(&gist.current_file().unwrap().raw_url)
+                            .send()
+                            .await
+                            .unwrap()
+                            .text()
+                            .await
+                            .unwrap()
+                    } else {
+                        current_file.content.clone()
+                    };
+
+                    let state = State::new(&content).ok();
                     state_clone.set(state);
                 }
                 gist.set(result);
