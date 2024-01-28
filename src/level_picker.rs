@@ -1,7 +1,6 @@
+use log_viewer::{level_filter::LevelFilter, proto::log_level::LogLevel};
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_state, Callback, Html, Properties};
-
-use crate::{level_filter::LevelFilter, proto::log_level::LogLevel};
 
 #[derive(Clone, PartialEq, Properties)]
 pub struct LevelPickerProps {
