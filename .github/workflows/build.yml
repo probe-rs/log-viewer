@@ -1,13 +1,8 @@
+
 name: build
 
 on: 
-  push:
-    branches: 
-      - master
-    paths-ignore:
-      - '**.md'
-      - '**.png'
-      - '**cd.yml'
+  pull_request:
 
 jobs:
   build:
@@ -28,7 +23,7 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
       run: |
-        trunk build
+        trunk build --release
     - name: cargo fmt & clippy
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
