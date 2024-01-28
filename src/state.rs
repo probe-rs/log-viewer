@@ -4,9 +4,9 @@ use crate::proto::{Event, Span};
 
 #[derive(Debug)]
 pub struct ParseError {
-    line_no: usize,
-    content: String,
-    error: serde_json::Error,
+    _line_no: usize,
+    _content: String,
+    _error: serde_json::Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Properties)]
@@ -24,9 +24,9 @@ impl State {
             .filter(|(_line_no, l)| l.starts_with('{'))
             .map(|(line_no, line)| {
                 serde_json::from_str(line).map_err(|e| ParseError {
-                    line_no,
-                    content: line.to_string(),
-                    error: e,
+                    _line_no: line_no,
+                    _content: line.to_string(),
+                    _error: e,
                 })
             })
             .filter(|r| r.is_ok())
