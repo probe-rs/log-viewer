@@ -248,8 +248,9 @@ fn App() -> Html {
             let gist = gist_clone;
             wasm_bindgen_futures::spawn_local(async move {
                 let local = move || async {
-                    let location: HashMap<String, String> =
-                        BrowserHistory::new().location().query()?;
+                    let location = BrowserHistory::new()
+                        .location()
+                        .query::<HashMap<String, String>>()?;
 
                     let hash = location
                         .get("gist")
