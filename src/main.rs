@@ -36,8 +36,6 @@ const GH_API_VERSION: &str = "2022-11-28";
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
 
-    log::info!("Testing log output...");
-
     yew::Renderer::<App>::new().render();
 }
 
