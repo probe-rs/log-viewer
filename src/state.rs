@@ -9,6 +9,18 @@ pub struct ParseError {
     _error: serde_json::Error,
 }
 
+fn get_previous_span(event: &Event) -> Option<&Span> {
+    if let Some(spans) = &event.spans {
+        if spans.len() > 1 {
+            spans.get(spans.len() - 2)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Properties)]
 pub struct State {
     pub events: Vec<Event>,
@@ -49,14 +61,15 @@ impl State {
 
             let current_node = *current_node;
 
-            // The log viewer does not support actual parallel traces yet, so
-            // we limit ourselves to the probe-rs crate for now.
-            if !event.target.starts_with("probe_rs") {
-                continue;
-            }
-
             match &event.fields.message[..] {
                 "enter" => {
+                    let previous_span = get_previous_span(event);
+
+                    if &previous_span != current_span {
+                        log::debug!("Ignoring event: {:?}, previous span {:?} does not match active span {:?}", event, previous_span, current_span);
+                        continue;
+                    }
+
                     let node = Node {
                         index: Some(index),
                         children: vec![],
@@ -71,7 +84,11 @@ impl State {
                         .children
                         .push(EventType::Node(node_index));
 
-                    log::debug!("Entering span {:?}", event.span.as_ref());
+                    log::debug!(
+                        "Entering span {:?}, current_spans: {:?}",
+                        event.span.as_ref(),
+                        event.spans
+                    );
 
                     tree.push((node_index, event.span.as_ref()));
                 }
@@ -84,6 +101,7 @@ impl State {
                             current_span
                         );
                     } else {
+                        log::debug!("Exiting span {:?}", event.span.as_ref());
                         let _ = tree.pop();
                     }
                 }
