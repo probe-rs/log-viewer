@@ -12,8 +12,7 @@ pub struct ParseError {
 fn get_previous_span(event: &Event) -> Option<&Span> {
     if let Some(spans) = &event.spans {
         if spans.len() > 1 {
-            let last_span = spans.get(spans.len() - 1).unwrap();
-            Some(&last_span)
+            spans.get(spans.len() - 2)
         } else {
             None
         }
@@ -64,10 +63,10 @@ impl State {
 
             match &event.fields.message[..] {
                 "enter" => {
-                    let previous_span = get_previous_span(&event);
+                    let previous_span = get_previous_span(event);
 
                     if &previous_span != current_span {
-                        log::debug!("Ignoring event: {:?}, previous span {:?} does not match active span {:?}", event.fields.message, previous_span, current_span);
+                        log::debug!("Ignoring event: {:?}, previous span {:?} does not match active span {:?}", event, previous_span, current_span);
                         continue;
                     }
 
