@@ -59,43 +59,40 @@ fn App() -> Html {
         LevelFilter::new(map)
     });
 
-    use_effect_with_deps(
-        |level_filter| {
-            let history = BrowserHistory::new();
-            let location = history.location();
+    use_effect_with(level_filter.clone(), |level_filter| {
+        let history = BrowserHistory::new();
+        let location = history.location();
 
-            history
-                .push_with_query(location.path(), {
-                    let mut map = location.query::<HashMap<String, String>>().unwrap();
-                    let mut remove_keys = vec![];
-                    for key in map.keys() {
-                        if key.starts_with("filter") {
-                            remove_keys.push(key.clone());
-                        }
+        history
+            .push_with_query(location.path(), {
+                let mut map = location.query::<HashMap<String, String>>().unwrap();
+                let mut remove_keys = vec![];
+                for key in map.keys() {
+                    if key.starts_with("filter") {
+                        remove_keys.push(key.clone());
                     }
-                    for key in remove_keys {
-                        map.remove(&key);
-                    }
-                    for (target, filter) in level_filter.matrix() {
-                        map.insert(
-                            format!(
-                                "filter{}",
-                                if let Some(target) = target {
-                                    format!("::{target}")
-                                } else {
-                                    "".into()
-                                }
-                            )
-                            .replace("::", "-"),
-                            filter.to_string(),
-                        );
-                    }
-                    map
-                })
-                .unwrap();
-        },
-        level_filter.clone(),
-    );
+                }
+                for key in remove_keys {
+                    map.remove(&key);
+                }
+                for (target, filter) in level_filter.matrix() {
+                    map.insert(
+                        format!(
+                            "filter{}",
+                            if let Some(target) = target {
+                                format!("::{target}")
+                            } else {
+                                "".into()
+                            }
+                        )
+                        .replace("::", "-"),
+                        filter.to_string(),
+                    );
+                }
+                map
+            })
+            .unwrap();
+    });
 
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
@@ -241,74 +238,71 @@ fn App() -> Html {
     // https://api.github.com/gists/14a826cbe3a884fc3207cde3dfd38817
     let gist_clone = gist.clone();
     let state_clone = state.clone();
-    use_effect_with_deps(
-        move |_| {
-            let gist = gist_clone;
-            wasm_bindgen_futures::spawn_local(async move {
-                let local = move || async {
-                    let location = BrowserHistory::new()
-                        .location()
-                        .query::<HashMap<String, String>>()?;
+    use_effect_with((), move |_| {
+        let gist = gist_clone;
+        wasm_bindgen_futures::spawn_local(async move {
+            let local = move || async {
+                let location = BrowserHistory::new()
+                    .location()
+                    .query::<HashMap<String, String>>()?;
 
-                    let hash = location
-                        .get("gist")
-                        .ok_or_else(|| anyhow::anyhow!("A gist hash must be provided"))?;
+                let hash = location
+                    .get("gist")
+                    .ok_or_else(|| anyhow::anyhow!("A gist hash must be provided"))?;
 
-                    log::debug!("Loading gist {}", hash);
-                    let mut request = Request::get(&format!("https://api.github.com/gists/{hash}"))
-                        .header("X-GitHub-Api-Version", GH_API_VERSION);
+                log::debug!("Loading gist {}", hash);
+                let mut request = Request::get(&format!("https://api.github.com/gists/{hash}"))
+                    .header("X-GitHub-Api-Version", GH_API_VERSION);
 
-                    if let Some(token) = gh_token() {
-                        request = request.header("Authorization", &format!("Bearer {token}"));
-                    }
+                if let Some(token) = gh_token() {
+                    request = request.header("Authorization", &format!("Bearer {token}"));
+                }
 
-                    let response = request
-                        .send()
+                let response = request
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+
+                if response.status() == 200 {
+                    let response: Gist = response
+                        .json()
                         .await
                         .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
+                    Ok(response)
+                } else {
+                    anyhow::bail!("Failed to load file with: {}", response.status());
+                }
+            };
 
-                    if response.status() == 200 {
-                        let response: Gist = response
-                            .json()
-                            .await
-                            .map_err(|e| anyhow::anyhow!("Failed to load file").context(e))?;
-                        Ok(response)
-                    } else {
-                        anyhow::bail!("Failed to load file with: {}", response.status());
-                    }
+            let result = local().await;
+
+            if let Ok(gist) = &result {
+                let current_file = gist.current_file().unwrap();
+
+                log::debug!("Using file {} from gist", current_file.filename);
+
+                let content = if current_file.truncated {
+                    log::info!(
+                        "File {} is truncated, downloading complete file...",
+                        current_file.filename
+                    );
+                    Request::get(&gist.current_file().unwrap().raw_url)
+                        .send()
+                        .await
+                        .unwrap()
+                        .text()
+                        .await
+                        .unwrap()
+                } else {
+                    current_file.content.clone()
                 };
 
-                let result = local().await;
-
-                if let Ok(gist) = &result {
-                    let current_file = gist.current_file().unwrap();
-
-                    log::debug!("Using file {} from gist", current_file.filename);
-
-                    let content = if current_file.truncated {
-                        log::info!(
-                            "File {} is truncated, downloading complete file...",
-                            current_file.filename
-                        );
-                        Request::get(&gist.current_file().unwrap().raw_url)
-                            .send()
-                            .await
-                            .unwrap()
-                            .text()
-                            .await
-                            .unwrap()
-                    } else {
-                        current_file.content.clone()
-                    };
-
-                    let state = State::new(&content).ok();
-                    state_clone.set(state);
-                }
-                gist.set(result);
-            });
-        },
-        (),
-    );
+                let state = State::new(&content).ok();
+                state_clone.set(state);
+            }
+            gist.set(result);
+        });
+    });
 
     html! {<ContextMenuProvider>
         <ContextMenu />

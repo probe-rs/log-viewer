@@ -4,7 +4,7 @@ use gloo::events::EventListener;
 use wasm_bindgen::JsCast;
 use web_sys::{EventTarget, MouseEvent};
 use yew::{
-    function_component, html, use_context, use_effect_with_deps, use_reducer, use_state, Callback,
+    function_component, html, use_context, use_effect_with, use_reducer, use_state, Callback,
     Children, ContextProvider, Html, Properties, Reducible, UseReducerHandle,
 };
 
@@ -15,21 +15,18 @@ pub fn context_menu() -> Html {
 
     {
         let context_menu = context_menu.clone();
-        use_effect_with_deps(
-            move |_| {
-                listener.set(Some(EventListener::new(
-                    &web_sys::window()
-                        .unwrap()
-                        .document()
-                        .unwrap()
-                        .dyn_into::<EventTarget>()
-                        .unwrap(),
-                    "click",
-                    move |_event| context_menu.dispatch(ContextMenuAction::Hide),
-                )));
-            },
-            (),
-        );
+        use_effect_with((), move |_| {
+            listener.set(Some(EventListener::new(
+                &web_sys::window()
+                    .unwrap()
+                    .document()
+                    .unwrap()
+                    .dyn_into::<EventTarget>()
+                    .unwrap(),
+                "click",
+                move |_event| context_menu.dispatch(ContextMenuAction::Hide),
+            )));
+        });
     }
 
     let show = &context_menu.show;
