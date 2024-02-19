@@ -21,8 +21,8 @@ pub fn pill(props: &PillProps) -> Html {
             event.prevent_default();
             event.set_cancel_bubble(true);
             context_menu.dispatch(ContextMenuAction::Show(
-                event.client_x(),
-                event.client_y(),
+                event.page_x(),
+                event.page_y(),
                 items.clone(),
             ))
         }
