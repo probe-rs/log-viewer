@@ -6,6 +6,7 @@ mod pill;
 
 use std::{
     collections::{BTreeMap, HashMap},
+    rc::Rc,
     str::FromStr,
 };
 
@@ -321,7 +322,7 @@ fn App() -> Html {
             <button onclick={oncreate} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]}>{"Create"}</button>
             <div class="m-3">
                 {match (&*gist, &*state) {
-                    (Ok(_gist), Some(state)) => html!{<InfoNode state={state.clone()} node_index={0} level_filter={level_filter.clone()} />},
+                    (Ok(_gist), Some(state)) => html!{<InfoNode state={Rc::new(state.clone())} node_index={0} level_filter={level_filter.clone()} />},
                     (Err(error), _) => error.to_string().into(),
                     _ => unreachable!()
                 }}

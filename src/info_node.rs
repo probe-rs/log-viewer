@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use yew::{
     classes, function_component, html, use_state, Callback, Html, Properties, UseStateHandle,
 };
@@ -12,7 +14,7 @@ use log_viewer::{
 
 #[derive(Clone, PartialEq, Properties)]
 pub struct InfoNodeProps {
-    pub state: State,
+    pub state: Rc<State>,
     pub node_index: usize,
     pub level_filter: UseStateHandle<LevelFilter>,
 }
