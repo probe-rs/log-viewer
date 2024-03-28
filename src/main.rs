@@ -11,11 +11,11 @@ use std::{
 };
 
 use gloo::{
+    file::File,
     history::{BrowserHistory, History},
     net::http::Request,
 };
-use wasm_bindgen::JsCast;
-use web_sys::HtmlTextAreaElement;
+use web_sys::{js_sys, HtmlInputElement, HtmlTextAreaElement};
 use yew::prelude::*;
 
 use crate::{
@@ -35,9 +35,37 @@ fn gh_token() -> Option<&'static str> {
 const GH_API_VERSION: &str = "2022-11-28";
 
 fn main() {
-    wasm_logger::init(wasm_logger::Config::default());
+    // Enabling trace log slows down the application significantly with large log files
+    wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
 
     yew::Renderer::<App>::new().render();
+}
+
+#[derive(Properties, Clone, PartialEq)]
+struct UploadProps {
+    on_upload: Callback<String>,
+}
+
+#[function_component]
+fn Upload(props: &UploadProps) -> Html {
+    let input_ref = use_node_ref();
+    let callback = props.on_upload.clone();
+
+    let callback_input_ref = input_ref.clone();
+
+    let onclick = move |_| {
+        let input: HtmlTextAreaElement = callback_input_ref.cast().unwrap();
+        callback.emit(input.value());
+    };
+
+    html! {
+        <div class={classes!["w-full", "h-full", "bg-white", "fixed"]}>
+        <button onclick={onclick} class="border border-black px-2 py-1 m-3">{"Upload"}</button>
+        <div class="w-full h-full p-3">
+            <textarea ref={input_ref} class="border border-black w-full h-5/6 p-3"></textarea>
+        </div>
+    </div>
+    }
 }
 
 #[function_component]
@@ -98,7 +126,7 @@ fn App() -> Html {
     let gist = use_state(|| Err(anyhow::anyhow!("Loading file ...")));
     let state = use_state(|| None);
     let show_upload = use_state(|| false);
-    let upload_value = use_state(String::new);
+
     // let selected_occurrence = use_state(|| 0);
     // let total_occurrences = use_state(|| 0);
     // let changed_occurrence = use_state(|| false);
@@ -138,21 +166,6 @@ fn App() -> Html {
     //     }
     // };
 
-    let upload_oninput = {
-        let upload_value = upload_value.clone();
-        move |event: InputEvent| {
-            // When events are created the target is undefined, it's only
-            // when dispatched does the target get added.
-            let target = event.target();
-            // Events can bubble so this listener might catch events from child
-            // elements which are not of type HtmlInputElement
-            let input = target
-                .and_then(|t| t.dyn_into::<HtmlTextAreaElement>().ok())
-                .unwrap();
-            upload_value.set(input.value());
-        }
-    };
-
     let on_select = {
         let level_filter = level_filter.clone();
         move |new_value| level_filter.set(new_value)
@@ -167,13 +180,11 @@ fn App() -> Html {
         let gist_clone = gist.clone();
         let state_clone = state.clone();
         let show_upload = show_upload.clone();
-        move |_| {
+        move |upload_value| {
             let gist_clone = gist_clone.clone();
             let state_clone = state_clone.clone();
             let show_upload = show_upload.clone();
-            let upload_value = upload_value.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let upload_value = upload_value.clone();
                 let local = || async move {
                     let gist = CreateGist {
                         public: true,
@@ -182,7 +193,7 @@ fn App() -> Html {
                             map.insert(
                                 "trace.json".into(),
                                 CreateGistFile {
-                                    content: (*upload_value).clone(),
+                                    content: upload_value,
                                 },
                             );
                             map
@@ -230,9 +241,52 @@ fn App() -> Html {
                         })
                         .unwrap();
                 }
-                gist_clone.set(result);
+                gist_clone.set(result.map(|_gist| ()));
                 show_upload.set(false);
             });
+        }
+    };
+
+    let state_clone = state.clone();
+    let gist_clone = gist.clone();
+    let on_upload_file = {
+        move |event: Event| {
+            log::debug!("Got event: {event:?}");
+            let state_clone = state_clone.clone();
+            let gist_clone = gist_clone.clone();
+
+            let input: HtmlInputElement = event.target_unchecked_into();
+
+            if let Some(files) = input.files() {
+                let file = js_sys::try_iter(&files)
+                    .unwrap()
+                    .unwrap()
+                    .map(|v| web_sys::File::from(v.unwrap()))
+                    .map(File::from)
+                    .next()
+                    .unwrap();
+
+                wasm_bindgen_futures::spawn_local(async move {
+                    let file = file;
+                    let file_content = gloo::file::futures::read_as_text(&file).await;
+
+                    match file_content {
+                        Ok(content) => match State::new(&content) {
+                            Ok(state) => {
+                                state_clone.set(Some(state));
+                                gist_clone.set(Ok(()));
+                            }
+                            Err(e) => {
+                                gist_clone.set(Err(anyhow::anyhow!("Error parsing file: {e:?}")))
+                            }
+                        },
+                        Err(err) => {
+                            log::error!("Failed to read file: {err}");
+                            gist_clone.set(Err(anyhow::anyhow!(err)))
+                        }
+                    }
+                });
+            }
         }
     };
 
@@ -301,32 +355,35 @@ fn App() -> Html {
                 let state = State::new(&content).ok();
                 state_clone.set(state);
             }
-            gist.set(result);
+            gist.set(result.map(|_gist| ()));
         });
     });
 
-    html! {<ContextMenuProvider>
-        <ContextMenu />
-        <div class={classes!["w-full", "h-full", "bg-white", if *show_upload { "fixed" } else { "hidden" }]}>
-            <button onclick={onupload} class="border border-black px-2 py-1 m-3">{"Upload"}</button>
-            <div class="w-full h-full p-3">
-                <textarea class="border border-black w-full h-5/6 p-3" oninput={upload_oninput}></textarea>
-            </div>
+    html! {
+        <div class="p-3">
+            <ContextMenuProvider>
+                <h1 class="text-3xl font-bold">{"Log Viewer"}</h1>
+                <ContextMenu />
+                if *show_upload {
+                    <Upload on_upload={onupload} />
+                }
+                <div>
+                    // <label>{"Search:"}</label>
+                    // <input {oninput} value={search_value.to_string()} />
+                    // <button onclick={onclick_previous}>{ "<" }</button>
+                    // <button onclick={onclick_next}>{ ">" }</button>
+                    <LevelPicker level_filter={(*level_filter).clone()} {on_select} />
+                    <button onclick={oncreate} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]}>{"Create"}</button>
+                    <input id="file-upload" type="file" onchange={on_upload_file} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]} />
+                    <div class="m-3">
+                        {match (&*gist, &*state) {
+                            (Ok(_gist), Some(state)) => html!{<InfoNode state={Rc::new(state.clone())} node_index={0} level_filter={level_filter.clone()} />},
+                            (Err(error), _) => error.to_string().into(),
+                            _ => unreachable!()
+                        }}
+                    </div>
+                </div>
+            </ContextMenuProvider>
         </div>
-        <div>
-            // <label>{"Search:"}</label>
-            // <input {oninput} value={search_value.to_string()} />
-            // <button onclick={onclick_previous}>{ "<" }</button>
-            // <button onclick={onclick_next}>{ ">" }</button>
-            <LevelPicker level_filter={(*level_filter).clone()} {on_select} />
-            <button onclick={oncreate} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]}>{"Create"}</button>
-            <div class="m-3">
-                {match (&*gist, &*state) {
-                    (Ok(_gist), Some(state)) => html!{<InfoNode state={Rc::new(state.clone())} node_index={0} level_filter={level_filter.clone()} />},
-                    (Err(error), _) => error.to_string().into(),
-                    _ => unreachable!()
-                }}
-            </div>
-        </div>
-    </ContextMenuProvider>}
+    }
 }

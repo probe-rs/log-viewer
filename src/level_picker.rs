@@ -29,7 +29,6 @@ pub fn level_picker(props: &LevelPickerProps) -> Html {
                 let open = open.clone();
                 let target = target.clone();
                 move |_| {
-                    let open = open.clone();
                     let target = target.clone();
                     if open.is_some() {
                         if *open != Some(target.clone()) {

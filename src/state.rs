@@ -27,25 +27,34 @@ pub struct State {
     pub nodes: Vec<Node>,
 }
 
+fn parse_events(data: &str) -> Result<Vec<Event>, ParseError> {
+    let events: Result<Vec<Event>, _> = data
+        .lines()
+        .enumerate()
+        .filter(|(_line_no, l)| l.starts_with('{'))
+        .map(|(line_no, line)| {
+            serde_json::from_str(line).map_err(|e| ParseError {
+                _line_no: line_no,
+                _content: line.to_string(),
+                _error: e,
+            })
+        })
+        .filter(|r| r.is_ok())
+        .collect();
+
+    events
+}
+
 impl State {
     pub fn new(data: &str) -> Result<Self, ParseError> {
-        // TODO: Show lines had errors
-        let events: Result<Vec<Event>, _> = data
-            .lines()
-            .enumerate()
-            .filter(|(_line_no, l)| l.starts_with('{'))
-            .map(|(line_no, line)| {
-                serde_json::from_str(line).map_err(|e| ParseError {
-                    _line_no: line_no,
-                    _content: line.to_string(),
-                    _error: e,
-                })
-            })
-            .filter(|r| r.is_ok())
-            .collect();
+        // TODO: Show lines which had errors
 
-        let events = events?;
+        let events = parse_events(data)?;
 
+        Self::from_events(events)
+    }
+
+    fn from_events(events: Vec<Event>) -> Result<Self, ParseError> {
         log::debug!("{} events in log file", events.len());
 
         let mut nodes_storage: Vec<Node> = vec![Node {
@@ -66,7 +75,12 @@ impl State {
                     let previous_span = get_previous_span(event);
 
                     if &previous_span != current_span {
-                        log::debug!("Ignoring event: {:?}, previous span {:?} does not match active span {:?}", event, previous_span, current_span);
+                        log::trace!(
+                        "Ignoring event: {:?}, previous span {:?} does not match active span {:?}",
+                        event,
+                        previous_span,
+                        current_span
+                    );
                         continue;
                     }
 
@@ -84,7 +98,7 @@ impl State {
                         .children
                         .push(EventType::Node(node_index));
 
-                    log::debug!(
+                    log::trace!(
                         "Entering span {:?}, current_spans: {:?}",
                         event.span.as_ref(),
                         event.spans
@@ -94,7 +108,7 @@ impl State {
                 }
                 "exit" => {
                     if &event.span.as_ref() != current_span {
-                        log::debug!(
+                        log::trace!(
                             "Ignoring event: {:?}, span {:?} does not match expected span {:?}",
                             event.fields.message,
                             event.span,
@@ -113,7 +127,7 @@ impl State {
                             .children
                             .push(EventType::Message(index));
                     } else {
-                        log::debug!(
+                        log::trace!(
                             "Ignoring event: {:?}, span {:?} does not match expected span {:?}",
                             event.fields.message,
                             event.span,

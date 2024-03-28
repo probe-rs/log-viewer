@@ -23,12 +23,12 @@ pub struct InfoNodeProps {
 pub fn info_node(props: &InfoNodeProps) -> Html {
     let node = &props.state.nodes[props.node_index];
     let event = node.index.map(|i| &props.state.events[i]);
-    let collapsed = use_state(|| node.expanded);
+    let expanded = use_state(|| node.expanded);
 
     let onclick = {
-        let collapsed = collapsed.clone();
+        let expanded = expanded.clone();
         move |_| {
-            collapsed.set(!*collapsed);
+            expanded.set(!*expanded);
         }
     };
 
@@ -76,29 +76,31 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                             html!{ <Pill {context_menu} {classes}>{target}</Pill> }
                         }
 
-                        html! {<span class={classes!["pl-6", "py-1", "m-1", "flex", "cursor-default", "select-none", if hidden { "hidden" } else { "block" }]}>
-                            <LogLevelLabel {level} />
-                            <span class={classes!["p-1", "px-2", "rounded-lg", format!("bg-{}", level.color())]}>
-                            {for targets.iter().enumerate().scan(String::new(), |state, (i, target)| {
-                                if i == 0 {
-                                    state.push_str(target);
-                                } else {
-                                    *state = format!("{state}::{target}");
-                                }
-                                Some((i, state.clone(), target))}).map(|(i, ts, t)| { html!{<>
-                                    {if i != 0 {
-                                        html!{{"::"}}
+                        html! {
+                            <span key={props.node_index} class={classes!["pl-6", "py-1", "m-1", "flex", "cursor-default", "select-none", if hidden { "hidden" } else { "block" }]}>
+                                <LogLevelLabel {level} />
+                                <span class={classes!["p-1", "px-2", "rounded-lg", format!("bg-{}", level.color())]}>
+                                {for targets.iter().enumerate().scan(String::new(), |state, (i, target)| {
+                                    if i == 0 {
+                                        state.push_str(target);
                                     } else {
-                                        html!{}
-                                    }}
-                                    { nest(level_filter.clone(), level, &ts, t) }
-                                </>}})
-                            }
+                                        *state = format!("{state}::{target}");
+                                    }
+                                    Some((i, state.clone(), target))}).map(|(i, ts, t)| { html!{<>
+                                        {if i != 0 {
+                                            html!{{"::"}}
+                                        } else {
+                                            html!{}
+                                        }}
+                                        { nest(level_filter.clone(), level, &ts, t) }
+                                    </>}})
+                                }
+                                </span>
+                                <pre>
+                                {message}
+                                </pre>
                             </span>
-                            <pre>
-                            {message}
-                            </pre>
-                        </span>}
+                        }
 
                     }
                     EventType::Node(node_index) => html! {
@@ -122,20 +124,27 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
         html! {
             <div class="flex w-full py-1">
                 <div class="flex flex-col">
-                    <svg xmlns="http://www.w3.org/2000/svg" onclick={onclick.clone()} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if !*collapsed { "block" } else { "hidden" } )}>
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                    </svg>
 
-                    <svg xmlns="http://www.w3.org/2000/svg" {onclick} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", if *collapsed { "block" } else { "hidden" } )}>
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                    </svg>
-                    <div class={classes!("grow", "w-3", "border-r", "border-black", if *collapsed { "block" } else { "hidden" } )}></div>
+                    if *expanded {
+                        <svg xmlns="http://www.w3.org/2000/svg" {onclick} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", "block" )}>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                        <div class={classes!("grow", "w-3", "border-r", "border-black", "block")}></div>
+
+                    } else {
+                        <svg xmlns="http://www.w3.org/2000/svg" onclick={onclick.clone()} fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class={classes!("w-6", "h-6", "block" )}>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                    }
+
                 </div>
                 <div>
                     <LogLevelLabel {level} />
                     <span class={classes!["m-1","p-1", "rounded-md", "bg-gray-200"]}>{target}</span>
                     {span_title}
-                    <span class={classes!["pt-1", if *collapsed { "block" } else { "hidden" } ]}>{body()}</span>
+                    if *expanded {
+                        <span class={classes!["pt-1", "block"]}>{body()}</span>
+                    }
                 </div>
             </div>
         }
