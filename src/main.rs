@@ -227,7 +227,7 @@ fn App() -> Html {
                 if let Ok(gist) = &result {
                     let state = gist
                         .current_file()
-                        .map(|gist| State::new(&gist.content))
+                        .map(|gist| State::new(&gist.content).map(Rc::new))
                         .transpose()
                         .unwrap();
                     state_clone.set(state);
@@ -273,7 +273,7 @@ fn App() -> Html {
                     match file_content {
                         Ok(content) => match State::new(&content) {
                             Ok(state) => {
-                                state_clone.set(Some(state));
+                                state_clone.set(Some(Rc::new(state)));
                                 gist_clone.set(Ok(()));
                             }
                             Err(e) => {
@@ -352,7 +352,7 @@ fn App() -> Html {
                     current_file.content.clone()
                 };
 
-                let state = State::new(&content).ok();
+                let state = State::new(&content).map(Rc::new).ok();
                 state_clone.set(state);
             }
             gist.set(result.map(|_gist| ()));
@@ -362,7 +362,6 @@ fn App() -> Html {
     html! {
         <div class="p-3">
             <ContextMenuProvider>
-                <h1 class="text-3xl font-bold">{"Log Viewer"}</h1>
                 <ContextMenu />
                 if *show_upload {
                     <Upload on_upload={onupload} />
@@ -377,7 +376,7 @@ fn App() -> Html {
                     <input id="file-upload" type="file" onchange={on_upload_file} class={classes!["ml-3","my-3", "px-2", "py-1", "border", "border-black"]} />
                     <div class="m-3">
                         {match (&*gist, &*state) {
-                            (Ok(_gist), Some(state)) => html!{<InfoNode state={Rc::new(state.clone())} node_index={0} level_filter={level_filter.clone()} />},
+                            (Ok(_gist), Some(state)) => html!{<InfoNode state={state.clone()} node_index={0} level_filter={level_filter.clone()} />},
                             (Err(error), _) => error.to_string().into(),
                             _ => unreachable!()
                         }}
