@@ -77,29 +77,31 @@ pub fn info_node(props: &InfoNodeProps) -> Html {
                         }
 
                         html! {
-                            <span key={props.node_index} class={classes!["pl-6", "py-1", "m-1", "flex", "cursor-default", "select-none", if hidden { "hidden" } else { "block" }]}>
-                                <LogLevelLabel {level} />
-                                <span class={classes!["p-1", "px-2", "rounded-lg", format!("bg-{}", level.color())]}>
-                                {for targets.iter().enumerate().scan(String::new(), |state, (i, target)| {
-                                    if i == 0 {
-                                        state.push_str(target);
-                                    } else {
-                                        *state = format!("{state}::{target}");
-                                    }
-                                    Some((i, state.clone(), target))}).map(|(i, ts, t)| { html!{<>
-                                        {if i != 0 {
-                                            html!{{"::"}}
+                            if !hidden {
+                                <div key={props.node_index} class={classes!["pl-6", "py-1", "m-1", "flex", "cursor-default", "select-none", "block"]}>
+                                    <LogLevelLabel {level} />
+                                    <span class={classes!["p-1", "px-2", "rounded-lg", format!("bg-{}", level.color())]}>
+                                    {for targets.iter().enumerate().scan(String::new(), |state, (i, target)| {
+                                        if i == 0 {
+                                            state.push_str(target);
                                         } else {
-                                            html!{}
-                                        }}
-                                        { nest(level_filter.clone(), level, &ts, t) }
-                                    </>}})
-                                }
-                                </span>
-                                <pre>
-                                {message}
-                                </pre>
-                            </span>
+                                            *state = format!("{state}::{target}");
+                                        }
+                                        Some((i, state.clone(), target))}).map(|(i, ts, t)| { html!{<>
+                                            {if i != 0 {
+                                                html!{{"::"}}
+                                            } else {
+                                                html!{}
+                                            }}
+                                            { nest(level_filter.clone(), level, &ts, t) }
+                                        </>}})
+                                    }
+                                    </span>
+                                    <pre>
+                                    {message}
+                                    </pre>
+                                </div>
+                            }
                         }
 
                     }
