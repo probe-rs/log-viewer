@@ -16,7 +16,7 @@ wasm-bindgen-futures = "0.4"
 wasm-logger = "0.2"
 log = "0.4"
 anyhow = "1.0"
-lazy_static = { version = "1.4" }
+lazy_static = { version = "1.5" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 clap = { version = "4.5.7", features = ["derive"] }
