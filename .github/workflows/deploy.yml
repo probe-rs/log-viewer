@@ -33,7 +33,7 @@ jobs:
       run: |
         cp CNAME dist/CNAME
     - name: Deploy demo
-      uses: JamesIves/github-pages-deploy-action@v4.6.9
+      uses: JamesIves/github-pages-deploy-action@v4.7.2
       with:
         branch: gh-pages
         folder: dist
