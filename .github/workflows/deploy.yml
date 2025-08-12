@@ -20,7 +20,7 @@ jobs:
         toolchain: stable
         target: wasm32-unknown-unknown
         override: true
-    - uses: jetli/trunk-action@v0.5.0
+    - uses: jetli/trunk-action@v0.5.1
       with:
         # Optional version of trunk to install(eg. 'v0.8.1', 'latest')
         version: 'latest'
